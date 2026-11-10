@@ -1,4 +1,32 @@
-# Инвентаризация upstream (Ф0)
+# Инвентаризация upstream
+
+## MSX2 (karabas-go-core-msx2, Ф0, 2026-11-10)
+
+| Репозиторий | Коммит | Дата | Роль |
+|---|---|---|---|
+| [gnogni/ocm-pld-dev](https://github.com/gnogni/ocm-pld-dev) (OCM-PLD, KdL) | `0a0f049` | 2026-11-04 | ESE-VDP (V9938 / V9958), `src/rtl/msx/vdp` |
+| [andykarpov/karabas-go-core-msx](https://github.com/andykarpov/karabas-go-core-msx) | `65e67db` | 2026-11-04 | всё остальное: история этого репозитория до Ф0 MSX2 |
+
+ESE-VDP: `esemsx3/src/video/` — `vdp.vhd` и всё, что под ним (`vdp_vga`, `vdp_doublebuf`,
+`vdp_linebuf` тоже: `vdp.vhd` их создаёт всегда; при `DISPRESO` = 0 они не нужны, XST часть
+выбрасывает). Импорт без изменений — коммит `3d16ab3`; `git diff 3d16ab3 -- src/rtl/msx/vdp`
+показывает правки, каждая помечена `-- karabas:`:
+
+| Файл | Правка |
+|---|---|
+| `vdp_graphic4567.vhd` | `WHEN OTHERS => NULL` в `case` (XST: нужен `others`) |
+| `vdp_register.vhd` | сброс `REG_R9_PAL_MODE` в `'0'` вместо `FORCED_V_MODE` (асинхронный сброс в сигнал = защёлка LDC) |
+
+`ram.vhd`, который `vdp_sprite` создаёт как `ram`, — тот же файл, что `rtl/msx/cart/ram.vhd` (ESE,
+из SCC MSX1_MiSTer). Лицензия ESE-VDP — BSD-подобная с пунктом «без коммерческого использования
+без письменного разрешения» (проект некоммерческий, см. `PLAN.md`, «Решения»); заголовки файлов
+сохранены.
+
+`rtl/msx/msx1.v` стал `msx2.v` (модуль `msx2`): `vdp18` и его VRAM 16 КБ в BRAM убраны, ESE-VDP на
+`clk21` (запрос, VRAM-порт, видео 15 кГц — см. комментарии `karabas:` в файле). `vdp18/` остаётся в
+дереве для сравнения и симуляции MSX1, в `msx2.prj` его нет.
+
+## MSX1 (karabas-go-core-msx, Ф0, 2026-10-30)
 
 Снято 2026-10-30. Клоны для сравнения — вне git, `src/sim/build/upstream/`:
 

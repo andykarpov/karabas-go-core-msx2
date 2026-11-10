@@ -1,6 +1,11 @@
-# Ядро MSX1 для Karabas Go / Mini / Mini G
+# Ядро MSX2 для Karabas Go / Mini / Mini G
 
 [English version](README.md)
+
+**В работе.** Ядро MSX2 / MSX2+: MSX1-ядро
+[karabas-go-core-msx](https://github.com/andykarpov/karabas-go-core-msx) с ESE-VDP (V9938 / V9958)
+из [OCM-PLD](https://github.com/gnogni/ocm-pld-dev) и буфером кадра в SDRAM. Файла ядра пока нет;
+план — `docs/PLAN.md`. Текст ниже пока описывает MSX1-ядро, с которого начато это.
 
 Компьютер MSX1 для плат семейства Karabas Go. Это порт
 [MSX1_MiSTer](https://github.com/MiSTer-devel/MSX1_MiSTer) (автор molekula) на Xilinx Spartan-6
@@ -143,3 +148,8 @@ Slot 1, RAM или FM сбрасывают машину; загрузка кас
 ней: MSX1_MiSTer — GPL v2 или новее, jt49 и jtopl — GPL v3, T80 и vdp18 — лицензии в стиле BSD, jt8255 — MIT,
 C-BIOS — BSD из двух пунктов (`src/roms/LICENSE.cbios`; ROM C-BIOS встроены в файлы ядра). Disk ROM
 VY-0010 (`src/rtl/msx/rom`) взят из MSX1_MiSTer.
+
+У ESE-VDP (`src/rtl/msx/vdp`, Kunihiko Ohnaka, из OCM-PLD от KdL) лицензия в стиле BSD с ещё одним
+условием: без письменного разрешения его нельзя продавать и использовать в коммерческих продуктах и
+деятельности. С GPL это условие несовместимо, и оно действует для файлов ядра, в которых есть VDP:
+они только для некоммерческого использования.
