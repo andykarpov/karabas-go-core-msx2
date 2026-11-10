@@ -9,6 +9,10 @@
 // (262 lines), from frame 4 on PAL (313). The output must be 800 x 525 clocks in every line and frame
 // with 640 active pixels, and show the window (H_START, V_START of NTSC / PAL, 640 x 240, each line
 // twice, dots 620..639 black) once frames are complete; the frames at the change to PAL may be wrong.
+// +il: interlace, as the VDP gives it (sim_sys, il.rom of mkvdp.py): NTSC frames of 525 lines, the upper
+// field with vs at the start of line 3, the lower one with vs in the middle of line 265 and its picture
+// one line later from its vs; the fields differ (their pattern has the field). The output must weave
+// them: line 2y the line y of the upper field, 2y + 1 that of the lower.
 
 module tb_msx2_fb;
 
@@ -29,10 +33,15 @@ localparam VS_LINE = 3;
 reg [10:0] gh = 11'd0;
 reg [9:0] gl = 10'd0;
 reg [4:0] frame_no = 5'd0;
-wire pal_src = frame_no >= 5'd4;
-wire [9:0] lines = pal_src ? 10'd313 : 10'd262;
-wire hs_n = !((gh < 11'd100) || (gl < 10'd9 && gh >= 11'd684 && gh < 11'd734));
-wire vs_n = !(gl >= 10'd3 && gl < 10'd6);
+reg il_mode = 1'b0;
+initial il_mode = $test$plusargs("il");
+wire pal_src = !il_mode && frame_no >= 5'd4;
+wire [9:0] lines = il_mode ? 10'd525 : pal_src ? 10'd313 : 10'd262;
+wire eq = gl < 10'd9 || (il_mode && gl >= 10'd262 && gl < 10'd271);
+wire hs_n = !((gh < 11'd100) || (eq && gh >= 11'd684 && gh < 11'd734));
+wire vs_n = il_mode ? !((gl >= 10'd3 && gl < 10'd6) || (gl == 10'd265 && gh >= 11'd684) ||
+                        gl == 10'd266 || gl == 10'd267 || (gl == 10'd268 && gh < 11'd684)) :
+                      !(gl >= 10'd3 && gl < 10'd6);
 // +ph1: dhclk one clock later, a dot in the clock of the line start (the capture does not count it:
 // 683 dots a line then, the window shows the source dots one later)
 reg ph = 1'b0;
@@ -43,7 +52,11 @@ wire [9:0] sdot = ghp[10:1];
 function [17:0] pat(input [9:0] d, input [9:0] l);
 	pat = { d[5:0] ^ l[5:0], d[6:1] + l[5:0], l[5:0] ^ { d[2:0], d[5:3] } };
 endfunction
-wire [17:0] src = pat(sdot, gl);
+// interlace: the window line of the field (the upper from line 3 + V_NTSC, the lower one line later
+// from its vs at 265.5) and the field in bit 9 of the line of the pattern
+wire [9:0] il_l = gl >= 10'd263 ? gl - 10'd266 - V_NTSC : gl - 10'd3 - V_NTSC;
+wire il_lower = gl >= 10'd263;
+wire [17:0] src = il_mode ? pat(sdot, { il_lower, il_l[8:0] } ^ 10'h155) : pat(sdot, gl);
 always @(posedge clk21) begin
 	if (gh == 11'd1367) begin
 		gh <= 11'd0;
@@ -66,6 +79,7 @@ wire [15:0] sdr_dq;
 msx2_fb #(.H_START(H_START), .V_NTSC(V_NTSC), .V_PAL(V_PAL)) dut(
 	.clk21(clk21), .clk_sys(clk_sys), .clk_vga(clk_vga), .reset(reset),
 	.r_i(src[17:12]), .g_i(src[11:6]), .b_i(src[5:0]), .hs_n_i(hs_n), .vs_n_i(vs_n), .dhclk(dhclk),
+	.il(il_mode),
 	.rgb(rgb), .hs(hs), .vs(vs), .de(de),
 	.sdr_clk(sdr_clk), .sdr_a(sdr_a), .sdr_ba(sdr_ba), .sdr_dq(sdr_dq), .sdr_dqm(sdr_dqm),
 	.sdr_ras_n(sdr_ras_n), .sdr_cas_n(sdr_cas_n), .sdr_we_n(sdr_we_n)
@@ -106,8 +120,12 @@ end
 // the expected pixel of the output: RGB565 of the source, widened as msx2_fb does
 function [23:0] expect(input integer x, input integer y, input pal);
 	reg [17:0] q;
+	reg [9:0] y_il;              // interlace: the field (y odd: the lower) and its line
 	begin
-		q = pat(H_START + ph + x, VS_LINE + (pal ? V_PAL : V_NTSC) + y / 2);
+		y_il = { y[0], 9'd0 };
+		y_il[8:0] = y / 2;
+		q = il_mode ? pat(H_START + ph + x, y_il ^ 10'h155) :
+		              pat(H_START + ph + x, VS_LINE + (pal ? V_PAL : V_NTSC) + y / 2);
 		if (x >= 620 - ph) expect = 24'd0;
 		else expect = { q[17:13], q[17:15], q[11:6], q[11:10], q[5:1], q[5:3] };
 	end

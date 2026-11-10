@@ -1,7 +1,7 @@
 {
     "id": "msx2",
     "name": "MSX2",
-    "build": "26111006",
+    "build": "26111009",
     "visible": true,
     "type": "osd",
     "order": 19,
@@ -40,6 +40,7 @@
     {"index": 16, "type": "S", "name": "Mapper B", "options": ["Auto", "None", "Game Master 2", "Konami", "Konami SCC", "ASCII 8", "ASCII 16", "Linear 64K"], "default": 0, "page": 1},
     {"type": "-", "page": 1},
     {"index": 21, "type": "S", "name": "VDP", "options": ["V9958 (MSX2+)", "V9938 (MSX2)"], "default": 0, "page": 1},
+    {"index": 22, "type": "S", "name": "CPU", "options": ["3.58 MHz", "5.37 MHz", "7.16 MHz"], "default": 0, "hotkey": "Menu+T", "page": 1},
     {"index": 18, "type": "S", "name": "RAM", "options": ["512K mapper", "64K"], "default": 0, "page": 1},
     {"index": 19, "type": "S", "name": "FM (MSX-MUSIC)", "options": ["On", "Off"], "default": 0, "page": 1},
     {"index": 20, "type": "S", "name": "Tape input", "options": ["CAS file", "Tape in"], "default": 0, "page": 1},

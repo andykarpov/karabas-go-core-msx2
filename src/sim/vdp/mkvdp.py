@@ -15,6 +15,10 @@ interrupts off, then draw with the command engine (waiting for CE in S#2 after e
 text80.rom: SCREEN 0 with 80 columns through the BIOS (LINL40 = 80, CHGMOD 0) and lines of text
 with CHPUT (TEXT 2).
 
+il.rom: SCREEN 5 interlaced with the two pages in turn (R9 IL + EO, R2 page 1): page 0 is colour 1 with
+line 0 colour 15 and a band of colour 15 on lines 100..103, page 1 colour 2 with line 0 colour 14 and
+the band on lines 101..104; each field of the VDP shows one page (the frame buffer weaves them).
+
 usage: mkvdp.py OUTDIR
 """
 import os
@@ -145,6 +149,43 @@ TESTS = (
 )
 
 
+def interlace():
+    lines = [HEAD, """start:	di
+	ld	sp, 0xF380
+	ld	hl, regs
+setr:	ld	a, (hl)
+	cp	0xFF
+	jr	z, draw
+	inc	hl
+	ld	b, a
+	ld	a, (hl)
+	inc	hl
+	call	wreg
+	jr	setr
+draw:	ld	hl, cmds
+	ld	b, 6
+dl:	push	bc
+	push	hl
+	call	cmd
+	pop	hl
+	ld	bc, 11
+	add	hl, bc
+	pop	bc
+	djnz	dl
+stop:	jr	stop
+""", COMMON]
+    # G4, display on, page 1 (R2 3F: with EO the fields show pages 0 and 1), 212 lines, IL + EO
+    lines.append("regs:\tdb\t0, 0x06, 1, 0x40, 2, 0x3F, 7, 0x04, 8, 0x0A, 9, 0x8C, 23, 0, 0xFF\n")
+
+    def hmmv(x, y, nx, ny, clr):
+        return "\tdw\t%d, %d, %d, %d\n\tdb\t0x%02X, 0, 0xC0\n" % (x, y, nx, ny, clr)
+
+    lines.append("cmds:\n")
+    lines.append(hmmv(0, 0, 256, 212, 0x11) + hmmv(0, 0, 256, 1, 0xFF) + hmmv(0, 100, 256, 4, 0xFF))
+    lines.append(hmmv(0, 256, 256, 212, 0x22) + hmmv(0, 256, 256, 1, 0xEE) + hmmv(0, 357, 256, 4, 0xEE))
+    return ''.join(lines)
+
+
 def build(out, name, text):
     src = os.path.join(out, name + '.asm')
     raw = os.path.join(out, name + '.bin')
@@ -161,6 +202,7 @@ def main():
     for t in TESTS:
         build(out, t[0], bitmap(*t[1:]))
     build(out, 'text80', TEXT80)
+    build(out, 'il', interlace())
 
 
 if __name__ == '__main__':

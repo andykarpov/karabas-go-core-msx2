@@ -26,7 +26,8 @@
    page Machine: 13 Slot 1 (cartridge A / disk drive / Nextor)   14 Slot 1 ROM (on / off: the disk
    ROM or the Nextor ROM reads FF, for tests under C-BIOS)   15 Mapper A   16 Mapper B   17 -
    18 RAM (512K mapper / 64K)   19 FM (MSX-MUSIC on / off)   20 Tape input (CAS file / TAPE_IN)
-   21 VDP (V9958, MSX2+ / V9938, MSX2), pinned by "index" in core.json; BIOS (FL 2), Nextor ROM (FL 5)
+   21 VDP (V9958, MSX2+ / V9938, MSX2)   22 CPU (3.58 / 5.37 / 7.16 MHz), pinned by "index" in core.json;
+   BIOS (FL 2), Nextor ROM (FL 5)
    7 Video: 0 Auto (R9 of the VDP: the BIOS), 1 PAL 50 Hz, 2 NTSC 60 Hz
 */
 
@@ -338,8 +339,8 @@ assign SD_CLK = mcu_sck_ibufg;
 
 // ------------------------------------------------------------------ soft switches
 
-wire [22*8-1:0] sw;
-kg_soft_switches #(.N(22)) soft_switches (
+wire [23*8-1:0] sw;
+kg_soft_switches #(.N(23)) soft_switches (
 	.clk(clk_sys),
 	.command(softsw_command),
 	.regs(sw),
@@ -359,12 +360,13 @@ wire sw_ram64 = sw[18*8];
 wire sw_no_fm = sw[19*8];
 wire sw_tape_line = sw[20*8];
 wire sw_v9938 = sw[21*8];
+wire [1:0] sw_turbo = sw[22*8 +: 2];   // 0 3.58, 1 5.37, 2 7.16 MHz
 
 // ------------------------------------------------------------------ the machine
 
 assign msx_reset_dbg = areset || sw_reset || mcu_busy;
 wire [7:0] vdp_r, vdp_g, vdp_b;
-wire vdp_hs_n, vdp_vs_n, vdp_dhclk;
+wire vdp_hs_n, vdp_vs_n, vdp_dhclk, vdp_il;
 wire [15:0] msx_audio;
 
 // the start of the machine after the mcu (its busy falls): the clock registers of kg_mcu are set then
@@ -397,6 +399,7 @@ msx_system msx (
 	.pal(sw_video == 2'd1),
 	.pal_auto(sw_video == 2'd0),
 	.v9958(~sw_v9938),
+	.turbo(sw_turbo),
 	.joy_swap(sw_joy_swap),
 	.tape_rewind(sw_tape_rewind),
 	.tape_line(sw_tape_line),
@@ -437,7 +440,7 @@ msx_system msx (
 	.vdp_dhclk(vdp_dhclk),
 	.vdp_dlclk(),
 	.vdp_blank(),
-	.vdp_interlace(),
+	.vdp_interlace(vdp_il),
 	.audio(msx_audio),
 	.MA(MA),
 	.MD(MD),
@@ -459,6 +462,7 @@ msx2_fb video (
 	.hs_n_i(vdp_hs_n),
 	.vs_n_i(vdp_vs_n),
 	.dhclk(vdp_dhclk),
+	.il(vdp_il),
 	.rgb(video_rgb),
 	.hs(video_hs),
 	.vs(video_vs),

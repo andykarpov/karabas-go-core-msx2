@@ -5,6 +5,7 @@
 //           [--disk FILE.dsk [--fdd-latency MS] [--fdd-drop N] [--save-disk OUT]]
 //           [--nextor [--nextor-rom FILE]] [--hdd FILE [--save-hdd OUT]] [--no-slot1-rom]
 //
+// --turbo N: the CPU at 3.58 (0), 5.37 (1), 7.16 MHz (2).
 // --rtc YYMMDDWHHMMSS: the clock registers of kg_mcu (rtc_mode 0, MC146818A: BCD, register B 02;
 // --rtc-bin: binary, B 06; W 0..6 = MC146818 1..7) as the firmware has them, the start pulse of
 // msx2_rtc when the machine leaves its reset; the RP5C01 is printed at the end ("rtc 20YY-MM-DD w W
@@ -358,6 +359,7 @@ int main(int argc, char **argv) {
 		else if (a == "--fast-logo") fast_logo = true;
 		else if (a == "--bios-first") bios_first = true;
 		else if (a == "--rtc-bin") rtc_bin = true;
+		else if (a == "--turbo") top->turbo = (uint8_t)atoi(next().c_str());
 		else if (a == "--cmos") { cmos_s = next(); if (cmos_s.size() != 26) { fprintf(stderr, "--cmos: 26 hex digits\n"); return 1; } }
 		else if (a == "--rtc") { rtc_s = next(); rtc_on = rtc_s.size() == 13; if (!rtc_on) { fprintf(stderr, "--rtc YYMMDDWHHMMSS\n"); return 1; } }
 		else if (a == "--ram64") ram64 = true;

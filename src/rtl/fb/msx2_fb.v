@@ -14,14 +14,20 @@
    of the VDP; a line of 640 words in a capture buffer of two lines; the start of the next line sends
    the request of a window line to the SDRAM side (a toggle), whatever the number of its dots (a dot
    in the clock of a line start is not counted: 683 or 684 a line, by the phase of dhclk).
-   Interlace: the fields go to the same lines (no weave yet).
- - SDRAM (clk_sys, msx2_fb_sdram.v): a line in two rows, row = { frame, line, half }, three frames:
+   Interlace (il, R9 of the VDP, latched at each vs): the two fields are woven into one frame of
+   480 lines. The lower field (its vs in the middle of a line: 500..900 clocks after the line start;
+   the VDP gives 262 and 261 lines) counts one line more from vs to its picture, so its line l is
+   window line l - 1; line y of the upper field is frame line 2y, of the lower one 2y + 1. A new
+   frame starts with line 0 of the upper field.
+ - SDRAM (clk_sys, msx2_fb_sdram.v): a line in two rows, row = { 0, frame, line (9 bits), half }
+   (line: the window line, or the frame line 0..479 in interlace), three frames:
    the line 0 of a new frame ends the frame before (done) and moves the writer to the frame that is
    neither done nor being shown. The output takes done at its frame start: whole frames only, no
    tearing; a frame of the VDP is repeated or dropped when the rates differ.
  - Output (clk_vga): 800 x 525, 640 x 480 active (hsync at 656..751, vsync at lines 490..491), each
-   captured line twice; the line s + 1 is read into the other half of the output buffer while the
-   line s shows (the first one in the last line of the frame). Black until a frame is complete.
+   captured line twice (in interlace each frame line once); the output buffer holds four lines: the
+   line s + 1 is read while s shows (interlace: the line vc + 2 while vc shows, 63 us for the SDRAM;
+   the first ones in the last lines of the frame). Black until a frame is complete.
    hs / vs / de high active (kg_osd_overlay takes them so; the top inverts the syncs), three clocks
    after the counters as in msx_video.
 */
@@ -42,6 +48,7 @@ module msx2_fb #(
 	input wire hs_n_i,
 	input wire vs_n_i,
 	input wire dhclk,
+	input wire il,                    // interlace (R9 IL of the VDP)
 
 	// the output (clk_vga)
 	output reg [23:0] rgb = 24'd0,
@@ -76,7 +83,9 @@ reg [8:0] vline = 9'd0;               // lines since the frame started
 reg [8:0] lines = 9'd262;             // the lines of the frame before
 reg cbuf = 1'b0;
 reg cap_tgl = 1'b0;
-reg [7:0] cap_line = 8'd0;
+reg [8:0] cap_line = 9'd0;            // the window line, or the frame line (interlace)
+reg il_f = 1'b0;                      // this frame: interlace
+reg fld = 1'b0;                       // this frame: the lower field
 reg cap_buf = 1'b0;
 reg cb_we = 1'b0;
 reg [10:0] cb_waddr = 11'd0;
@@ -85,7 +94,7 @@ reg [15:0] cb_wdata = 16'd0;
 wire hs_rise = !hs_n_i && hs_d;       // hs_d holds the last hs_n_i
 wire vs_rise = !vs_n_i && vs_d;
 wire line_start = hs_rise && since >= 11'd1300;
-wire [8:0] v_start = (lines > 9'd287) ? V_PAL : V_NTSC;
+wire [8:0] v_start = ((lines > 9'd287) ? V_PAL : V_NTSC) + (il_f && fld ? 9'd1 : 9'd0);
 wire [9:0] p = dot - H_START;
 wire [8:0] l = vline - v_start;
 wire in_win = dot >= H_START && p < W_LINE && vline >= v_start && l < H;
@@ -98,6 +107,8 @@ always @(posedge clk21) begin
 	if (vs_rise) begin
 		lines <= vline;
 		vline <= 9'd0;
+		il_f <= il;
+		fld <= since >= 11'd500 && since < 11'd900;
 	end
 	if (line_start) begin
 		since <= 11'd0;
@@ -105,7 +116,7 @@ always @(posedge clk21) begin
 		if (!vs_rise && vline != 9'h1FF) vline <= vline + 1'd1;
 		// the line that ends here, if it is a line of the window, to the SDRAM side
 		if (vline >= v_start && l < H) begin
-			cap_line <= l[7:0];
+			cap_line <= il_f ? { l[7:0], fld } : { 1'b0, l[7:0] };
 			cap_buf <= cbuf;
 			cap_tgl <= ~cap_tgl;
 			cbuf <= ~cbuf;
@@ -133,7 +144,7 @@ kg_sdpram #(.DW(16), .AW(11)) u_cbuf(
 
 reg [2:0] cap_s = 3'd0, out_s = 3'd0;
 reg out_tgl = 1'b0;
-reg [7:0] out_line = 8'd0;
+reg [8:0] out_line = 9'd0;
 reg out_fs = 1'b0;
 always @(posedge clk_sys) begin
 	cap_s <= { cap_s[1:0], cap_tgl };
@@ -147,7 +158,8 @@ reg [1:0] wf = 2'd0, df = 2'd1, rf = 2'd2;
 reg valid = 1'b0;
 reg wr_req = 1'b0, rd_req = 1'b0;
 reg [11:0] wr_row = 12'd0, rd_row = 12'd0;
-reg wr_buf = 1'b0, rd_buf = 1'b0;
+reg wr_buf = 1'b0;
+reg [1:0] rd_buf = 2'd0;
 
 function [1:0] other(input [1:0] a, input [1:0] b);   // the frame that is neither a nor b
 	other = (a != 2'd0 && b != 2'd0) ? 2'd0 : (a != 2'd1 && b != 2'd1) ? 2'd1 : 2'd2;
@@ -157,7 +169,7 @@ endfunction
 // moves to the frame that is neither the new df nor the frame shown from now on (both may come in
 // the same clock: the output still takes the old df then)
 wire out_new = out_ev && out_fs;
-wire cap_new = cap_ev && (cap_line == 8'd0);
+wire cap_new = cap_ev && (cap_line == 9'd0);
 wire [1:0] rf_n = out_new ? df : rf;
 wire [1:0] wf_n = cap_new ? other(wf, rf_n) : wf;
 
@@ -173,12 +185,12 @@ always @(posedge clk_sys) begin
 	if (cap_ev) begin
 		wr_req <= 1'b1;
 		wr_buf <= cap_buf;
-		wr_row <= { 2'b00, wf_n, cap_line };
+		wr_row <= { 1'b0, wf_n, cap_line };
 	end
 	if (out_ev) begin
 		rd_req <= 1'b1;
-		rd_buf <= out_line[0];
-		rd_row <= { 2'b00, rf_n, out_line };
+		rd_buf <= out_line[1:0];
+		rd_row <= { 1'b0, rf_n, out_line };
 	end
 	if (reset) valid <= 1'b0;
 end
@@ -188,7 +200,7 @@ reg [8:0] lines_s = 9'd0;
 always @(posedge clk_sys) lines_s <= lines;   // a debug value: a torn sample does no harm
 assign dbg = { valid, sdr_ready, 3'd0, lines_s };
 wire lb_we;
-wire [10:0] lb_addr;
+wire [11:0] lb_addr;
 wire [15:0] lb_data;
 msx2_fb_sdram u_sdram(
 	.clk(clk_sys),
@@ -213,7 +225,9 @@ localparam V_ACTIVE = 10'd480, V_FP = 10'd10, V_SYNC = 10'd2, V_TOTAL = 10'd525;
 
 reg [9:0] hc = 10'd0;
 reg [9:0] vc = 10'd0;
-wire [7:0] s = vc[8:1];               // the captured line of output line vc
+wire il_v;
+kg_sync #(.W(1)) u_sync_il(.clk(clk_vga), .d(il), .q(il_v));
+wire [8:0] s = il_v ? vc[8:0] : { 1'b0, vc[8:1] };   // the stored line of output line vc
 
 always @(posedge clk_vga) begin
 	if (hc == H_TOTAL - 1'd1) begin
@@ -224,8 +238,23 @@ always @(posedge clk_vga) begin
 	// the line reads: s + 1 at the start of the first of the two lines of s, line 0 in the last
 	// line of the frame
 	if (hc == 10'd0) begin
-		if (vc == V_TOTAL - 1'd1) begin
-			out_line <= 8'd0;
+		if (il_v) begin
+			// interlace: line vc + 2 while vc shows; 0 and 1 in the last two lines of the frame
+			if (vc == V_TOTAL - 2'd2) begin
+				out_line <= 9'd0;
+				out_fs <= 1'b1;
+				out_tgl <= ~out_tgl;
+			end else if (vc == V_TOTAL - 1'd1) begin
+				out_line <= 9'd1;
+				out_fs <= 1'b0;
+				out_tgl <= ~out_tgl;
+			end else if (vc < V_ACTIVE - 2'd2) begin
+				out_line <= vc[8:0] + 9'd2;
+				out_fs <= 1'b0;
+				out_tgl <= ~out_tgl;
+			end
+		end else if (vc == V_TOTAL - 1'd1) begin
+			out_line <= 9'd0;
 			out_fs <= 1'b1;
 			out_tgl <= ~out_tgl;
 		end else if (vc < V_ACTIVE - 2'd2 && !vc[0]) begin
@@ -236,13 +265,13 @@ always @(posedge clk_vga) begin
 	end
 end
 
-// the output buffer: { the line s[0], half, word }
+// the output buffer: { the line s[1:0], half, word }
 wire [15:0] ob_rdata;
 wire ob_half = hc >= 10'd320;
 wire [8:0] ob_word = ob_half ? hc[8:0] - 9'd320 : hc[8:0];
-kg_sdpram #(.DW(16), .AW(11)) u_obuf(
+kg_sdpram #(.DW(16), .AW(12)) u_obuf(
 	.clka(clk_sys), .wea(lb_we), .addra(lb_addr), .dina(lb_data),
-	.clkb(clk_vga), .enb(1'b1), .addrb({ s[0], ob_half, ob_word }), .doutb(ob_rdata)
+	.clkb(clk_vga), .enb(1'b1), .addrb({ s[1:0], ob_half, ob_word }), .doutb(ob_rdata)
 );
 
 wire valid_v;

@@ -19,8 +19,23 @@ slot 3-1 with RDSLT (the MSX-MUSIC ROM of C-BIOS in the layout of msx2_slots), p
 "FM OK" or "FM NONE", then keys on a note (violin) on the OPLL at the ports 7C-7D: the audio
 output is loud with the OPLL (sim_sys --audio-min) and quiet without it (--no-opll, --audio-max).
 
+kanjitest.rom (16 KB, no mapper) tests the kanji ROM ports (D8-D9 JIS level 1, DA-DB level 2): for
+eight characters (four of each level) it sets the character, reads its 32 bytes and compares their
+16-bit sum with the one of kanjifont.bin (256 KB, a pattern: sim_sys --rom kanjifont.bin:0x40000),
+prints "o" for a match, "x" else, then " OK" when all match; the second read of each character must
+start at byte 0 again (the counter is cleared by the writes):
+    KANJI oooooooo OK
+Without the font (no --rom) it must fail.
+
+turbotest.rom (16 KB, no mapper) measures the clock of the CPU: it copies a counting loop into the RAM
+at C000 (page 3: RAM, fast in turbo; the cartridge itself is in slot 1, which turbo runs at 3.58 MHz),
+counts its rounds for 10 frames (JIFFY) and prints the count in hex: 53DC at 3.58 MHz (PAL),
+1.5 and 2 times that with sim_sys --turbo 1 / 2:
+    TURBO 53DC   (5.37 MHz: 7E19, 7.16 MHz: A855)
+
 usage: mkcarts.py OUTDIR      (writes konami.rom, konami_scc.rom, ascii8.rom, ascii16.rom, keys.rom,
-                               rammap.rom, fmtest.rom)
+                               rammap.rom, fmtest.rom, kanjitest.rom, kanjifont.bin,
+                               turbotest.rom)
 """
 import os
 import subprocess
@@ -307,6 +322,174 @@ nofm:	db	"FM NONE", 0
 """
 
 
+def kanji_font():
+    """the pattern font of kanjitest: 256 KB, byte o"""
+    return bytes(((o * 37) ^ (o >> 7) ^ (o >> 13)) & 0xFF for o in range(0x40000))
+
+
+KANJI_CHARS = [(1, 0x000), (1, 0x03F), (1, 0x5A5), (1, 0xFFF), (2, 0x000), (2, 0x1C3), (2, 0xA5A), (2, 0xFFF)]
+
+
+def kanji_test():
+    font = kanji_font()
+    lines = []
+    for lvl, c in KANJI_CHARS:
+        base = (0x20000 if lvl == 2 else 0) + c * 32
+        sm = sum(font[base:base + 32]) & 0xFFFF
+        port = 0xD8 if lvl == 1 else 0xDA
+        lines.append('\tdb\t0x%02X, 0x%02X, 0x%02X\n\tdw\t0x%04X' % (port, c & 63, c >> 6, sm))
+    return KANJI_ASM.replace('@CHARS@', '\n'.join(lines)).replace('@N@', str(len(KANJI_CHARS)))
+
+
+KANJI_ASM = """
+CHPUT	equ	0x00A2
+	org	0x4000
+	db	"AB"
+	dw	start
+	ds	12, 0
+start:
+	ld	sp, 0xF380
+	ld	hl, title
+	call	print
+	ld	ix, chars
+	ld	b, @N@
+	ld	e, 0		; the characters that did not match
+next:	push	bc
+	push	de
+	call	sum		; the first read
+	push	hl
+	call	sum		; again: the counter starts at 0 after the writes
+	pop	de
+	or	a
+	sbc	hl, de
+	jr	nz, bad		; the two reads differ
+	ex	de, hl
+	ld	e, (ix+3)
+	ld	d, (ix+4)
+	or	a
+	sbc	hl, de
+	jr	nz, bad
+	ld	a, 'o'
+	pop	de
+	jr	shown
+bad:	ld	a, 'x'
+	pop	de
+	inc	e
+shown:	push	de
+	call	CHPUT
+	pop	de
+	ld	bc, 5
+	add	ix, bc
+	pop	bc
+	djnz	next
+	ld	a, e
+	or	a
+	jr	nz, stop
+	ld	hl, ok
+	call	print
+stop:	jr	stop
+
+; HL = the sum of the 32 bytes of the character at IX (port, low 6 bits, high 6 bits)
+sum:	ld	c, (ix+0)
+	ld	a, (ix+1)
+	out	(c), a
+	inc	c
+	ld	a, (ix+2)
+	out	(c), a
+	ld	hl, 0
+	ld	b, 32
+s1:	in	a, (c)
+	add	a, l
+	ld	l, a
+	jr	nc, s2
+	inc	h
+s2:	djnz	s1
+	ret
+
+print:	ld	a, (hl)
+	or	a
+	ret	z
+	push	hl
+	call	CHPUT
+	pop	hl
+	inc	hl
+	jr	print
+
+title:	db	"KANJI ", 0
+ok:	db	" OK", 0
+chars:
+@CHARS@
+"""
+
+
+TURBO = """
+CHPUT	equ	0x00A2
+JIFFY	equ	0xFC9E
+	org	0x4000
+	db	"AB"
+	dw	start
+	ds	12, 0
+start:
+	ld	sp, 0xF380
+	ld	hl, loop
+	ld	de, 0xC000
+	ld	bc, loop_end - loop
+	ldir
+	ei
+	call	0xC000
+	push	de
+	ld	hl, title
+	call	print
+	pop	de
+	ld	a, d
+	call	hex
+	ld	a, e
+	call	hex
+stop:	jr	stop
+
+; runs at C000: DE = the rounds in 10 frames
+loop:	ld	hl, JIFFY
+	ld	a, (hl)
+w0:	cp	(hl)
+	jr	z, w0
+	ld	a, (hl)
+	add	a, 10
+	ld	b, a
+	ld	de, 0
+lp:	inc	de
+	ld	a, (hl)
+	cp	b
+	jr	nz, lp
+	ret
+loop_end:
+
+hex:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	nib
+	pop	af
+nib:	and	15
+	add	a, '0'
+	cp	'9' + 1
+	jr	c, n1
+	add	a, 7
+n1:	jp	CHPUT
+
+print:	ld	a, (hl)
+	or	a
+	ret	z
+	push	hl
+	call	CHPUT
+	pop	hl
+	inc	hl
+	jr	print
+
+title:	db	"TURBO ", 0
+"""
+
+
 def plain(out, name, text):
     """a 16 KB cartridge without a mapper"""
     src = os.path.join(out, name + '.asm')
@@ -324,6 +507,9 @@ def main():
     plain(out, 'keys', KEYS)
     plain(out, 'rammap', RAMMAP)
     plain(out, 'fmtest', FMTEST)
+    plain(out, 'kanjitest', kanji_test())
+    plain(out, 'turbotest', TURBO)
+    open(os.path.join(out, 'kanjifont.bin'), 'wb').write(kanji_font())
     for name, bank, init, reg in MAPPERS:
         src = os.path.join(out, name.lower() + '.asm')
         raw = os.path.join(out, name.lower() + '.bin')

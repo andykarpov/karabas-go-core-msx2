@@ -20,10 +20,11 @@ The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v261
 
 ## What it does
 
-- **MSX2 / MSX2+:** Z80 (T80) at 3.58 MHz, the ESE-VDP of OCM-PLD as a V9958 (MSX2+: YJK screens
+- **MSX2 / MSX2+:** Z80 (T80) at 3.58 MHz (turbo: 5.37 or 7.16 MHz, the OSD item CPU), the ESE-VDP of OCM-PLD as a V9958 (MSX2+: YJK screens
   10..12, horizontal scroll) or a V9938 (OSD item VDP), 128 KB of VRAM, AY-3-8910 PSG (jt49), PPI,
   512 KB of RAM with the memory mapper (ports FC-FF; the OSD item RAM, 64K: plain 64 KB), the RTC
-  RP5C01 (ports B4-B5) with the time of the board.
+  RP5C01 (ports B4-B5) with the time of the board, the kanji ROM (ports D8-DB, JIS levels 1 and 2)
+  with the font of the BIOS file.
 - **MSX-MUSIC:** the OPLL (YM2413, [jt2413](https://github.com/jotego/jtopl)) at the ports 7C-7D, the
   MSX-MUSIC ROM in its slot (C-BIOS: 3-1, the OCM BIOS: 0-2). The OSD item FM (MSX-MUSIC) turns it
   off.
@@ -48,18 +49,18 @@ The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v261
   the board clock.
 - **Video:** the picture of the VDP (256 or 512 dots, 192 / 212 lines, with its border) in 640x480
   at 60 Hz from a frame buffer in the SDRAM; the VDP runs in its PAL (50 Hz) or NTSC (60 Hz) timing:
-  Auto follows register 9 (the BIOS, the programs), or the OSD item Video forces one. Interlaced
-  modes show one field.
+  Auto follows register 9 (the BIOS, the programs), or the OSD item Video forces one. The interlaced
+  modes (424 lines, the two pages in turn) are woven from their two fields into one 480-line frame.
 - **Input:** the USB keyboard as the MSX keyboard, two MSX joysticks: the joysticks of the board or
   USB gamepads.
 
 Checked on the Mini G: C-BIOS and the OCM BIOS (MSX BASIC 3.0), cartridges with sound (PSG, MSX-MUSIC),
 the VDP screens of the V9958 (also YJK), Disk BASIC on a `.dsk`, Nextor 2.1 on a hard disk image,
-a `.cas` game, the time of the board and the CMOS kept over a restart. Not checked on hardware yet:
+a `.cas` game, the time of the board and the CMOS kept over a restart, kanji BASIC (`CALL KANJI`), turbo (Nextor at 7.16 MHz), an interlaced screen. Not checked on hardware yet:
 TAPE_IN / TAPE_OUT, the joysticks, the 50 Hz timing, the V9938 setting.
 
-Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds, the kanji ROM (ports D8-DB), turbo,
-the interlace of two fields, SCC MegaRAM, FM-PAC, battery cartridges.
+Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds, SCC MegaRAM, FM-PAC, battery
+cartridges.
 
 ## BIOS and Nextor
 
@@ -79,7 +80,7 @@ of a real machine, are not supported yet: the core places the system ROMs as tha
 | 028000 | XBASIC | 3-3 |
 | 02C000 | MSX-MUSIC | 0-2 |
 | 030000 | sub-ROM, kanji BASIC | 3-1 |
-| 040000 | kanji font | (no kanji ports yet) |
+| 040000 | kanji font, JIS levels 1 and 2 (256 KB) | the kanji ports D8-DB |
 
 RAM is in slot 3-0. With C-BIOS the layout is that of its openMSX configuration instead: slot 0 not
 expanded (main ROM, logo), 3-0 sub-ROM, 3-1 MSX-MUSIC, 3-2 RAM. The layout follows the file: the C-BIOS
@@ -138,6 +139,7 @@ The main page has the media, video and reset items; the machine settings are on 
 | Mapper A | Auto / None / Game Master 2 / Konami / Konami SCC / ASCII 8 / ASCII 16 / Linear 64K (grey when Slot 1 is not Cartridge A) | |
 | Mapper B | as Mapper A | |
 | VDP | V9958 (MSX2+) / V9938 (MSX2) | |
+| CPU | 3.58 MHz / 5.37 MHz / 7.16 MHz | Menu+T |
 | RAM | 512K mapper / 64K | |
 | FM (MSX-MUSIC) | On / Off | |
 | Tape input | CAS file / Tape in (TAPE_IN) | |
@@ -148,6 +150,11 @@ The main page has the media, video and reset items; the machine settings are on 
 a mapper, Slot 1, RAM or FM, resets the machine; loading a tape does not. Slot 1 ROM = Off leaves the
 disk drive or the SD interface without its ROM (only its registers), for test programs that drive
 them themselves under C-BIOS.
+
+Turbo (CPU = 5.37 or 7.16 MHz) speeds up the RAM and the system ROMs; I/O and slots 1 and 2 (the
+cartridges, the disk drive, Nextor) keep 3.58 MHz, so the drives and the mappers work as before. Games
+that count on the speed of a 3.58 MHz Z80 run too fast, and the tape needs 3.58 MHz (the tape routines
+of the BIOS time the signal with the CPU).
 
 ## Keyboard
 

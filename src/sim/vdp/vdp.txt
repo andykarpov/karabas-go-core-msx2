@@ -2,9 +2,11 @@
 # last frame (sim_sys --hash), more sim_sys arguments. Each CRC was taken after the frame was looked at:
 # g4 / g6 / g7 / yjk: the fill, eight bands, two lines corner to corner, the XOR box in the middle
 # (g6 512 dots wide: its commands end later, 80 frames; yjk the colours of YJK); text80: six lines of
-# 80 columns of text. Not checked against a real VDP: g7 shows colour 0 black, not the border (TP = 0).
+# 80 columns of text; il: SCREEN 5 interlaced, the upper field (frame 70, 262 lines): page 0, black with
+# white lines 33 and 133..136 (frame 69, 261 lines: page 1, green, grey lines one later). Not checked against a real VDP: g7 shows colour 0 black, not the border (TP = 0).
 g4      80 00a3095a
 g6      80 1784d0bb
 g7      80 166b8a1a
 yjk     80 5ee1d720
 text80  45 36b338bc
+il      70 33751b07

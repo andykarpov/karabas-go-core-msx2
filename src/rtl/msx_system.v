@@ -73,6 +73,7 @@ module msx_system #(
 	input wire pal,            // 50 Hz when not pal_auto
 	input wire pal_auto,       // 50 / 60 Hz from R9 of the VDP (the BIOS)
 	input wire v9958,          // the VDP is a V9958 (MSX2+), else a V9938 (MSX2)
+	input wire [1:0] turbo,    // the CPU at 3.58 / 5.37 / 7.16 MHz
 	input wire joy_swap,
 	input wire tape_rewind,    // the OSD item, the CAS file from its start
 	input wire tape_line,      // the cassette input is TAPE_IN (a tape recorder), not the CAS file
@@ -327,6 +328,7 @@ msx2 #(.FDD_PHYS(FDD_PHYS)) msx2 (
 	.vdp_pal(pal),
 	.vdp_pal_auto(pal_auto),
 	.vdp_v9958(v9958),
+	.turbo(turbo),
 	.vram_addr(vram_addr),
 	.vram_we_n(vram_we_n),
 	.vram_dout(vram_dout),

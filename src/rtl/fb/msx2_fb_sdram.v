@@ -42,9 +42,9 @@ module msx2_fb_sdram #(
 	// a line read: a pulse of rd_req starts it; the words to the output buffer
 	input wire rd_req,
 	input wire [11:0] rd_row,
-	input wire rd_buf,
+	input wire [1:0] rd_buf,
 	output reg lb_we = 1'b0,
-	output reg [10:0] lb_addr = 11'd0,    // { buf, half, word }
+	output reg [11:0] lb_addr = 12'd0,    // { buf (2 bits), half, word }
 	output reg [15:0] lb_data = 16'd0,
 
 	output wire ready,                    // init done
@@ -102,7 +102,8 @@ assign ready = init_done;
 
 reg wr_pend = 1'b0, rd_pend = 1'b0;
 reg [11:0] w_row = 12'd0, r_row = 12'd0;
-reg w_buf = 1'b0, r_buf = 1'b0;
+reg w_buf = 1'b0;
+reg [1:0] r_buf = 2'd0;
 reg half = 1'b0;                      // the half of the line in the SDRAM row now
 reg [8:0] n = 9'd0;                   // the word of the next command (the capture buffer address)
 reg [8:0] col_d = 9'd0;               // the word cb_data holds (the address of the last clock)

@@ -21,6 +21,7 @@ module msx2 #(parameter FDD_PHYS = 0)
 	input         vdp_pal,       // karabas: 50 Hz when vdp_pal_auto = 0
 	input         vdp_pal_auto,  // karabas: 50 / 60 Hz from R9 (the BIOS, programs)
 	input         vdp_v9958,     // karabas: the ID of the VDP in S#1: V9958 (MSX2+), else V9938 (MSX2)
+	input   [1:0] turbo,         // karabas: the CPU at 3.58 (0), 5.37 (1) or 7.16 MHz (2, 3)
 	// karabas: the VRAM port (clk21): the word address (bit 16 = the byte of a write), its write,
 	// the 16-bit word read (both bytes: GRAPHIC 6 / 7 read two at once)
 	output [16:0] vram_addr,
@@ -157,6 +158,30 @@ cv_clock clock
 	.clk_en_3m58_n_o(clk_en_3m58_n)
 );
 
+// karabas: the clock of the CPU. turbo 0: the 3.58 MHz of cv_clock, as before. Turbo: a half period
+// of 4 (5.37 MHz) or 3 clocks (7.16 MHz), the rising (p) and falling (n) enables in turn; an I/O cycle
+// and an access to slot 1 or 2 (cartridges, the disk drive, Nextor) run at 3.58 MHz (a half period
+// of 6): the devices there take their strobes on the enables of 3.58 MHz (the PSG, the mappers, SCC).
+// The other users of clk_en_3m58 (the PSG, the RTC, the OPLL, the slots) stay on it.
+reg  [2:0] cpu_cnt = 3'd0;
+reg        cpu_ph = 1'b0;     // 0: a p next, 1: an n next
+reg        cpu_gp = 1'b0, cpu_gn = 1'b0;
+wire       cpu_slow;
+wire [2:0] cpu_half = cpu_slow ? 3'd5 : turbo == 2'd1 ? 3'd3 : 3'd2;
+always @(posedge clk) begin
+	cpu_gp <= 1'b0;
+	cpu_gn <= 1'b0;
+	if (cpu_cnt >= cpu_half) begin
+		cpu_cnt <= 3'd0;
+		cpu_ph <= ~cpu_ph;
+		if (cpu_ph) cpu_gn <= 1'b1; else cpu_gp <= 1'b1;
+	end
+	else
+		cpu_cnt <= cpu_cnt + 3'd1;
+end
+wire       cpu_p = turbo == 2'd0 ? clk_en_3m58_p : cpu_gp;
+wire       cpu_n = turbo == 2'd0 ? clk_en_3m58_n : cpu_gn;
+
 //  -----------------------------------------------------------------------------
 //  -- T80 CPU
 //  -----------------------------------------------------------------------------
@@ -167,8 +192,8 @@ t80pa #(.Mode(0)) T80
 (
 	.RESET_n(~reset),
 	.CLK(clk),
-	.CEN_p(clk_en_3m58_p),
-	.CEN_n(clk_en_3m58_n),
+	.CEN_p(cpu_p), // karabas: turbo
+	.CEN_n(cpu_n),
 	.WAIT_n(wait_n),
 	.INT_n(vdp_int_n),
 	.NMI_n(1),
@@ -196,7 +221,7 @@ ls74 u1_1
    .clr(exwait_n),
    .pre(u1_2_q),
    .clk(clk), // karabas: clk_en_3m58_p was the clock, see ls74.v
-   .ce(clk_en_3m58_p),
+   .ce(cpu_p),        // karabas: the clock of the CPU (turbo)
    .d(m1_n),
    .q(wait_n)
 );
@@ -206,7 +231,7 @@ ls74 u1_2
    .clr(1),
    .pre(exwait_n),
    .clk(clk), // karabas: clk_en_3m58_p was the clock, see ls74.v
-   .ce(clk_en_3m58_p),
+   .ce(cpu_p),        // karabas: the clock of the CPU (turbo)
    .d(wait_n),
    .q(u1_2_q)
 );
@@ -467,12 +492,49 @@ jt2413 opll
 // karabas: the MSX-MUSIC ROM is in slot 0-2 now (msx2_slots), the fake header of the MSX1 core
 // (APRLOPLL in slot 2) is gone
 
+// karabas: the kanji ROM, JIS level 1 at the ports D8 (address bits 10..5) / D9 (bits 16..11, the
+// reads of the font), level 2 at DA / DB: a write sets the character and clears the counter, a read
+// of D9 / DB gives byte <counter> (0..31) of the character and steps the counter. The font is 256 KB
+// at 040000 of the SRAM (OCM-BIOS.DAT; level 2 from 060000), read through the memory port in the
+// I/O cycle. D8 / DA read FF.
+wire        kanji_sel = ~iorq_n & m1_n & (a[7:2] == 6'b110110);
+wire        kanji_rd  = kanji_sel & ~rd_n & a[0];
+reg  [11:0] kanji_c1 = 12'd0, kanji_c2 = 12'd0;    // the characters of level 1 / 2
+reg   [4:0] kanji_n1 = 5'd0, kanji_n2 = 5'd0;      // their counters
+reg         kanji_wr_d = 1'b0, kanji_rd_d = 1'b0, kanji_l2 = 1'b0;
+always @(posedge clk) begin
+	kanji_wr_d <= kanji_sel & ~wr_n;
+	kanji_rd_d <= kanji_rd;
+	if (kanji_rd) kanji_l2 <= a[1];
+	if (reset) begin
+		kanji_c1 <= 12'd0; kanji_c2 <= 12'd0; kanji_n1 <= 5'd0; kanji_n2 <= 5'd0;
+	end
+	else if (kanji_sel & ~wr_n & ~kanji_wr_d) begin
+		case (a[1:0])
+			2'd0: begin kanji_c1[5:0]  <= d_from_cpu[5:0]; kanji_n1 <= 5'd0; end
+			2'd1: begin kanji_c1[11:6] <= d_from_cpu[5:0]; kanji_n1 <= 5'd0; end
+			2'd2: begin kanji_c2[5:0]  <= d_from_cpu[5:0]; kanji_n2 <= 5'd0; end
+			default: begin kanji_c2[11:6] <= d_from_cpu[5:0]; kanji_n2 <= 5'd0; end
+		endcase
+	end
+	else if (kanji_rd_d & ~kanji_rd) begin    // the end of a read
+		if (kanji_l2) kanji_n2 <= kanji_n2 + 5'd1;
+		else kanji_n1 <= kanji_n1 + 5'd1;
+	end
+end
+wire [21:0] kanji_addr = a[1] ? { 4'b0001, 1'b1, kanji_c2, kanji_n2 } : { 4'b0001, 1'b0, kanji_c1, kanji_n1 };
+
+// karabas: turbo: the cycles at 3.58 MHz (see the clock of the CPU)
+assign cpu_slow = ~iorq_n | ~SLTSL_n[1] | ~SLTSL_n[2];
+
 //  -----------------------------------------------------------------------------
 //  -- CPU data multiplex
 //  -----------------------------------------------------------------------------
 // karabas: the expansion registers, the ROMs of slots 0 and 3 (msx2_slots), slot 0 and 3 read FF
 // where nothing is; the RAM of 3-0 through slots.v (its slot 3)
-assign d_to_cpu = exp_rd                 ? exp_q :
+assign d_to_cpu = kanji_rd               ? mem_dout : // karabas
+                  (kanji_sel & ~rd_n)    ? 8'hFF :    // karabas
+                  exp_rd                 ? exp_q :
                   rom_sel                ? mem_dout :
                   ~(SLTSL_n[0])          ? 8'hFF :
                   nextor_sel             ? nextor_q : // karabas
@@ -633,6 +695,7 @@ assign mem_addr = ioctl_isBIOS            ? {3'b000, ioctl_addr[18:0]} :
                   ioctl_isNEXTOR          ? {5'b00000, ioctl_addr[16:0]} :
                   ioctl_isROMA            ? {2'b10, ioctl_addr[19:0]} :
                   ioctl_isROMB            ? {2'b01, ioctl_addr[19:0]} :
+                  kanji_rd                ? kanji_addr : // karabas
                   rom_sel                 ? rom_addr :
                   ram_sel                 ? {3'b001, ram_segment, a[13:0]} :
                   nextor_mem              ? {5'b00000, nextor_bank, a[13:0]} :

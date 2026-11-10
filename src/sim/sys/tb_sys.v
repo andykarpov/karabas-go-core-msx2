@@ -16,6 +16,7 @@ module tb_sys (
 	output wire [47:0] dbg_rtc,
 	output reg [103:0] dbg_cmos,
 	input wire reset,
+	input wire [1:0] turbo,
 	input wire rom_active,
 	input wire [31:0] rom_addr,
 	input wire [7:0] rom_data,
@@ -88,7 +89,7 @@ wire [7:0] vdp_r, vdp_g, vdp_b;
 wire vdp_hs_n, vdp_vs_n, vdp_blank;
 
 msx_system #(.TAPE_SILENT(100), .TAPE_SYNC(32), .RTC_TIME_DELAY(26'd200000)) sys (
-	.clk(clk), .clk21(clk21), .reset(reset), .rtc_start(rtc_start), .rtc_a(rtc_a), .rtc_do(rtc_do),
+	.clk(clk), .clk21(clk21), .reset(reset), .turbo(turbo), .rtc_start(rtc_start), .rtc_a(rtc_a), .rtc_do(rtc_do),
 	.rtc_di(rtc_di), .rtc_cs(rtc_cs), .rtc_wr_n(rtc_wr_n), .rtc_dbg(),
 	.rom_active(rom_active), .rom_addr(rom_addr), .rom_data(rom_data), .rom_wr(rom_wr),
 	.file_reset(file_reset), .file_active(file_active), .file_slot(file_slot), .file_addr(file_addr), .file_data(file_data),
