@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## MSX2 (this repository)
+
+`karabas-go-core-msx2` is the MSX2 / MSX2+ core, started 2026-11-10 from the history of `karabas-go-core-msx` (remote `msx1`, its `master` 65e67db): variant A of `docs/PLAN.md` (Russian) = the MSX1 machine with the ESE-VDP (V9958) of OCM-PLD instead of `vdp18`, the picture through a frame buffer in the SDRAM. Follow the phases of `docs/PLAN.md` and record decisions in its "Решения". The MSX1 plan and backlog are in `docs/msx1/`. Fixes of the MSX1 core (the Go physical floppy among them) come in by merging `msx1/master`. Until Ф0 is merged the rest of this file describes the MSX1 core it came from.
+
 ## Overview
 
 A port of an MSX1 machine to the Karabas Go, Mini and Mini G boards: Xilinx Spartan-6 XC6SLX25-2, ISE 14.7 (XST). One core, three tops (`src/rtl/karabas_go_top.v` VGA + PCM5102, `karabas_mini_top.v` HDMI + sigma-delta + PCM1808 ADC, `karabas_minig_top.v` HDMI + PCM5102), as in `karabas-go-core-nes` and `karabas-go-core-tsconf`. Mini G is the first target.
