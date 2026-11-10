@@ -22,6 +22,9 @@
  may be using the chip by then).
  The writes go through the ports of rtc.v (wr: one clock, adr0: 0 the pointer B4, 1 the data B5),
  every other clock.
+ The OCM-BIOS sets banks 1..3 at every start from a copy in its image (RTCSAVE of OCM keeps the
+ settings there: the machine has no battery); msx_system gives it the bytes of banks 2 and 3 from
+ here instead (pb / pbyte), so the BIOS sets the CMOS of the .eep.
  After phase A the writes to rtc.v are watched (s_wr / s_adr0 / s_dbo, as rtc.v takes them): a
  nibble the CPU writes into bank 2 or 3 goes to kg_mcu (40 + register, 50 + register), so to the
  .eep. The time the CPU sets is not sent: the board keeps its own clock.
@@ -46,7 +49,14 @@ module msx2_rtc #(
 	// the writes rtc.v takes (its req & wrt, adr[0], dbo)
 	input wire s_wr,
 	input wire s_adr0,
-	input wire [7:0] s_dbo
+	input wire [7:0] s_dbo,
+	// the CMOS as the OCM-BIOS keeps it (its "RTC CODE" at 033F9C of the image: 21 bytes from 033FC6,
+	// blocks 1..3, 7 bytes each, two registers a byte, the lower first; 13 the mode register): byte
+	// pb (0..13: blocks 2 and 3) of the CMOS here
+	input wire [3:0] pb,
+	output wire [7:0] pbyte,
+	// debug: { the CMOS writes sent, 0, the first: bank 3, register, nibble }
+	output wire [15:0] dbg
 );
 
 assign rtc_wr_n = !rtc_cs;
@@ -122,6 +132,17 @@ assign busy = st != S_IDLE;
 wire go_a = st == S_IDLE && start;
 wire go_b = st == S_IDLE && !start && wait_b && cnt == TIME_DELAY;
 
+// the CMOS: 0..12 bank 2, 13..25 bank 3 (loaded in phase A, then the writes of the CPU)
+reg [3:0] cm [0:25];
+wire pb3 = pb >= 4'd7;
+wire [3:0] pj = pb3 ? pb - 4'd7 : pb;                  // the byte in the block
+wire [4:0] pi = { 1'b0, pj, 1'b0 } + (pb3 ? 5'd13 : 5'd0);
+assign pbyte = pj == 4'd6 ? { pb3 ? 4'hB : 4'hA, cm[pi] } : { cm[pi + 5'd1], cm[pi] };
+
+reg [5:0] n_wr = 6'd0;
+reg [8:0] f_wr = 9'd0;       // the first CMOS write: bank 3, register, nibble
+assign dbg = { n_wr, 1'b0, f_wr };
+
 // the watch: the pointer and the mode register of rtc.v
 reg [3:0] p_ptr = 4'd0;
 reg [3:0] p_d = 4'd8;
@@ -137,6 +158,10 @@ always @(posedge clk) begin
 		if (rd_i == 3'd7) leap <= v_yy[1:0];
 	end
 	if (wait_b && st == S_IDLE) cnt <= cnt + 26'd1;
+	if (rtc_cs) begin
+		n_wr <= n_wr + 6'd1;
+		if (n_wr == 6'd0) f_wr <= { rtc_a[4:0], rtc_di[3:0] };
+	end
 	case (st)
 		S_IDLE:
 			if (go_a) begin
@@ -176,6 +201,8 @@ always @(posedge clk) begin
 			rtc_a <= w_src;
 			gap <= ~gap;
 			if (gap) begin
+				if (half && k >= 6'd1 && k <= 6'd13) cm[k - 6'd1] <= w_val;
+				if (half && k >= 6'd15 && k <= 6'd27) cm[k - 6'd2] <= w_val;
 				wr <= 1'b1;
 				adr0 <= half;
 				data <= { 4'd0, half ? w_val : w_reg };
@@ -202,6 +229,7 @@ always @(posedge clk) begin
 			if (ready && !busy && !go_a && !go_b && p_d[1] && p_ptr <= 4'd12) begin
 				rtc_cs <= 1'b1;
 				rtc_a <= { 3'b010, p_d[0], p_ptr };   // 40 + ptr, 50 + ptr
+				cm[p_d[0] ? { 1'b0, p_ptr } + 5'd13 : { 1'b0, p_ptr }] <= s_dbo[3:0];
 				rtc_di <= { 4'd0, s_dbo[3:0] };
 			end
 		end

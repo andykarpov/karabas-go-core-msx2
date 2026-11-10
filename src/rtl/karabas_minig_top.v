@@ -223,6 +223,7 @@ wire [13:0] fb_dbg;
 wire msx_reset_dbg;
 wire [7:0] rtc_a, rtc_do, rtc_di;
 wire rtc_cs, rtc_wr_n;
+wire [15:0] rtc_dbg;
 
 kg_mcu #(
 	.BURST_MAX_MHZ(32),  // Rev.G has MCU_SCK on a global clock pin
@@ -303,7 +304,7 @@ kg_mcu #(
 	.MATRIX_CMD(24'h000000),
 	.MATRIX_CMD_WR(1'b0),
 	.DEBUG_ADDR({ 1'b0, msx_reset_dbg, fb_dbg }),
-	.DEBUG_DATA(16'h0000),
+	.DEBUG_DATA(rtc_dbg),
 	.IMG_MOUNTED(img_mounted),
 	.IMG_SIZE(img_size),
 	.IMG_DATA_WR(img_data_wr),
@@ -379,6 +380,7 @@ msx_system msx (
 	.rtc_di(rtc_di),
 	.rtc_cs(rtc_cs),
 	.rtc_wr_n(rtc_wr_n),
+	.rtc_dbg(rtc_dbg),
 	.reset(areset || sw_reset || mcu_busy),
 	.rom_active(rom_active),
 	.rom_addr(rom_addr),

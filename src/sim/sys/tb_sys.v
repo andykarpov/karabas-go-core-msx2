@@ -89,7 +89,7 @@ wire vdp_hs_n, vdp_vs_n, vdp_blank;
 
 msx_system #(.TAPE_SILENT(100), .TAPE_SYNC(32), .RTC_TIME_DELAY(26'd200000)) sys (
 	.clk(clk), .clk21(clk21), .reset(reset), .rtc_start(rtc_start), .rtc_a(rtc_a), .rtc_do(rtc_do),
-	.rtc_di(rtc_di), .rtc_cs(rtc_cs), .rtc_wr_n(rtc_wr_n),
+	.rtc_di(rtc_di), .rtc_cs(rtc_cs), .rtc_wr_n(rtc_wr_n), .rtc_dbg(),
 	.rom_active(rom_active), .rom_addr(rom_addr), .rom_data(rom_data), .rom_wr(rom_wr),
 	.file_reset(file_reset), .file_active(file_active), .file_slot(file_slot), .file_addr(file_addr), .file_data(file_data),
 	.file_wr(file_wr),

@@ -51,6 +51,7 @@ module msx_system #(
 	output wire [7:0] rtc_di,  // a CMOS nibble the CPU wrote: to the .eep of the core
 	output wire rtc_cs,
 	output wire rtc_wr_n,
+	output wire [15:0] rtc_dbg,
 
 	// the ROM loader of the mcu
 	input wire rom_active,
@@ -209,6 +210,9 @@ end
 
 wire msx_reset = reset || rom_active || ioctl_download || mapper_reset || eject || hd_reset != 4'd0;
 
+wire [3:0] rtc_pb;          // the OCM-BIOS copy of the CMOS: its byte (below)
+wire [7:0] rtc_pbyte;
+
 // the RTC: the CMOS from the .eep of the core and the time of the board at the start, the CMOS
 // the CPU writes back to the .eep
 wire rtc_init_wr, rtc_init_adr0;
@@ -229,7 +233,10 @@ msx2_rtc #(.TIME_DELAY(RTC_TIME_DELAY)) u_rtc (
 	.busy(),
 	.s_wr(rtc_s_wr),
 	.s_adr0(rtc_s_adr0),
-	.s_dbo(rtc_s_dbo)
+	.s_dbo(rtc_s_dbo),
+	.pb(rtc_pb),
+	.pbyte(rtc_pbyte),
+	.dbg(rtc_dbg)
 );
 
 // ------------------------------------------------------------------ input
@@ -284,7 +291,23 @@ wire [7:0] vram_dout;
 wire [15:0] vram_din;
 wire [15:0] msx_audio;
 wire mem_we;
-wire [7:0] mem_din, mem_dout;
+wire [7:0] mem_din, mem_dout, sram_dout;
+assign mem_dout = rtc_patch ? rtc_pbyte : sram_dout;
+
+// the OCM-BIOS sets the CMOS at its start from 21 bytes at 033FC6 of its image (its "RTC CODE" at
+// 033F9C, the string at 033FE0): the reads of the bytes of banks 2 and 3 (033FCD..033FDA) get those of
+// msx2_rtc, the CMOS of the .eep. Only for an image with that string (seen while it is loaded).
+reg [7:0] ocm_rtc_sig = 8'd0;
+wire [7:0] ocm_rtc_chr = file_addr[2:0] == 3'd0 ? "R" : file_addr[2:0] == 3'd1 ? "T" : file_addr[2:0] == 3'd2 ? "C" :
+                         file_addr[2:0] == 3'd3 ? " " : file_addr[2:0] == 3'd4 ? "C" : file_addr[2:0] == 3'd5 ? "O" :
+                         file_addr[2:0] == 3'd6 ? "D" : "E";
+always @(posedge clk)
+	if (ioctl_isBIOS && file_wr && file_addr[24:3] == 22'h033FE0 >> 3)
+		ocm_rtc_sig[file_addr[2:0]] <= file_data == ocm_rtc_chr;
+wire ocm_rtc = !logo_en && &ocm_rtc_sig;
+assign rtc_pb = mem_addr[3:0] - 4'hD;              // 033FCD -> 0
+wire rtc_patch = ocm_rtc && mem_addr >= 22'h033FCD && mem_addr <= 22'h033FDA;
+
 wire cas_motor, cas_audio, cas_write;
 wire tape_in_s;
 kg_sync tape_in_sync (.clk(clk), .d(tape_in), .q(tape_in_s));
@@ -521,7 +544,7 @@ msx_sram sram (
 	.addr(rom_active ? rom_addr[21:0] : mem_addr),
 	.we(rom_active ? rom_wr && rom_keep : mem_we),
 	.din(rom_active ? rom_data : mem_din),
-	.dout(mem_dout),
+	.dout(sram_dout),
 	.aux_req(aux_req),
 	.aux_we(aux_we),
 	.aux_addr(aux_addr),
