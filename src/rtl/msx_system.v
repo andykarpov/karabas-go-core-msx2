@@ -157,6 +157,10 @@ wire ioctl_download = ioctl_isROMA || ioctl_isROMB || ioctl_isBIOS || ioctl_isNE
 
 reg [1:0] rom_enabled = 2'b00;
 reg logo_en = 1'b1;        // C-BIOS (the roms of core.json) until a system ROM image is loaded
+// the ROM loader does not write the system ROMs (000000-07FFFF) over a system ROM image: the firmware may
+// send the roms of core.json after the autoload of the BIOS item (seen on 26111002: C-BIOS over the main
+// ROM of OCM-BIOS.DAT in the slot layout of OCM, a black screen)
+wire rom_keep = logo_en || rom_addr[21:19] != 3'd0;
 always @(posedge clk) begin
 	if (ioctl_isROMA)
 		rom_enabled[0] <= 1'b1;
@@ -464,7 +468,7 @@ always @(posedge clk)
 msx_sram sram (
 	.clk(clk),
 	.addr(rom_active ? rom_addr[21:0] : mem_addr),
-	.we(rom_active ? rom_wr : mem_we),
+	.we(rom_active ? rom_wr && rom_keep : mem_we),
 	.din(rom_active ? rom_data : mem_din),
 	.dout(mem_dout),
 	.aux_req(aux_req),
