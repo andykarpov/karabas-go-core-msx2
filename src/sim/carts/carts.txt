@@ -18,3 +18,7 @@ fm_off      fmtest.rom      0 75 59b16c31 --no-opll --audio-max 100
 # kanji: the kanji ROM ports with the pattern font at 040000, "KANJI oooooooo OK"; kanji_nofont without it, "KANJI xxxxxxxx"
 kanji       kanjitest.rom   0 60 9d00a5bc --rom sim/build/carts/kanjifont.bin:0x40000
 kanji_nofont kanjitest.rom  0 60 747e8bcd
+# turbo: the clock of the CPU (turbotest counts a loop in the RAM for 10 frames): "TURBO 53DC" at 3.58 MHz, 7E19 at 5.37, A855 at 7.16
+turbo       turbotest.rom   0 60 1bd78025
+turbo5      turbotest.rom   0 60 bc95f37d --turbo 1
+turbo7      turbotest.rom   0 60 08752845 --turbo 2

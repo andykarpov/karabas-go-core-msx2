@@ -21,6 +21,7 @@ module msx2 #(parameter FDD_PHYS = 0)
 	input         vdp_pal,       // karabas: 50 Hz when vdp_pal_auto = 0
 	input         vdp_pal_auto,  // karabas: 50 / 60 Hz from R9 (the BIOS, programs)
 	input         vdp_v9958,     // karabas: the ID of the VDP in S#1: V9958 (MSX2+), else V9938 (MSX2)
+	input   [1:0] turbo,         // karabas: the CPU at 3.58 (0), 5.37 (1) or 7.16 MHz (2, 3)
 	// karabas: the VRAM port (clk21): the word address (bit 16 = the byte of a write), its write,
 	// the 16-bit word read (both bytes: GRAPHIC 6 / 7 read two at once)
 	output [16:0] vram_addr,
@@ -157,6 +158,30 @@ cv_clock clock
 	.clk_en_3m58_n_o(clk_en_3m58_n)
 );
 
+// karabas: the clock of the CPU. turbo 0: the 3.58 MHz of cv_clock, as before. Turbo: a half period
+// of 4 (5.37 MHz) or 3 clocks (7.16 MHz), the rising (p) and falling (n) enables in turn; an I/O cycle
+// and an access to slot 1 or 2 (cartridges, the disk drive, Nextor) run at 3.58 MHz (a half period
+// of 6): the devices there take their strobes on the enables of 3.58 MHz (the PSG, the mappers, SCC).
+// The other users of clk_en_3m58 (the PSG, the RTC, the OPLL, the slots) stay on it.
+reg  [2:0] cpu_cnt = 3'd0;
+reg        cpu_ph = 1'b0;     // 0: a p next, 1: an n next
+reg        cpu_gp = 1'b0, cpu_gn = 1'b0;
+wire       cpu_slow;
+wire [2:0] cpu_half = cpu_slow ? 3'd5 : turbo == 2'd1 ? 3'd3 : 3'd2;
+always @(posedge clk) begin
+	cpu_gp <= 1'b0;
+	cpu_gn <= 1'b0;
+	if (cpu_cnt >= cpu_half) begin
+		cpu_cnt <= 3'd0;
+		cpu_ph <= ~cpu_ph;
+		if (cpu_ph) cpu_gn <= 1'b1; else cpu_gp <= 1'b1;
+	end
+	else
+		cpu_cnt <= cpu_cnt + 3'd1;
+end
+wire       cpu_p = turbo == 2'd0 ? clk_en_3m58_p : cpu_gp;
+wire       cpu_n = turbo == 2'd0 ? clk_en_3m58_n : cpu_gn;
+
 //  -----------------------------------------------------------------------------
 //  -- T80 CPU
 //  -----------------------------------------------------------------------------
@@ -167,8 +192,8 @@ t80pa #(.Mode(0)) T80
 (
 	.RESET_n(~reset),
 	.CLK(clk),
-	.CEN_p(clk_en_3m58_p),
-	.CEN_n(clk_en_3m58_n),
+	.CEN_p(cpu_p), // karabas: turbo
+	.CEN_n(cpu_n),
 	.WAIT_n(wait_n),
 	.INT_n(vdp_int_n),
 	.NMI_n(1),
@@ -196,7 +221,7 @@ ls74 u1_1
    .clr(exwait_n),
    .pre(u1_2_q),
    .clk(clk), // karabas: clk_en_3m58_p was the clock, see ls74.v
-   .ce(clk_en_3m58_p),
+   .ce(cpu_p),        // karabas: the clock of the CPU (turbo)
    .d(m1_n),
    .q(wait_n)
 );
@@ -206,7 +231,7 @@ ls74 u1_2
    .clr(1),
    .pre(exwait_n),
    .clk(clk), // karabas: clk_en_3m58_p was the clock, see ls74.v
-   .ce(clk_en_3m58_p),
+   .ce(cpu_p),        // karabas: the clock of the CPU (turbo)
    .d(wait_n),
    .q(u1_2_q)
 );
@@ -498,6 +523,9 @@ always @(posedge clk) begin
 	end
 end
 wire [21:0] kanji_addr = a[1] ? { 4'b0001, 1'b1, kanji_c2, kanji_n2 } : { 4'b0001, 1'b0, kanji_c1, kanji_n1 };
+
+// karabas: turbo: the cycles at 3.58 MHz (see the clock of the CPU)
+assign cpu_slow = ~iorq_n | ~SLTSL_n[1] | ~SLTSL_n[2];
 
 //  -----------------------------------------------------------------------------
 //  -- CPU data multiplex

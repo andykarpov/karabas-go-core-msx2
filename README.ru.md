@@ -20,7 +20,7 @@ SDRAM. ПЛИС плат — Xilinx Spartan-6 XC6SLX25. Вся работа с �
 
 ## Что умеет
 
-- **MSX2 / MSX2+:** Z80 (T80) на 3,58 МГц, ESE-VDP из OCM-PLD как V9958 (MSX2+: YJK-режимы
+- **MSX2 / MSX2+:** Z80 (T80) на 3,58 МГц (турбо: 5,37 или 7,16 МГц, пункт OSD CPU), ESE-VDP из OCM-PLD как V9958 (MSX2+: YJK-режимы
   SCREEN 10–12, горизонтальный скролл) или V9938 (пункт OSD VDP), 128 КБ VRAM, звук AY-3-8910 (jt49),
   PPI, 512 КБ ОЗУ с memory mapper (порты FC–FF; пункт OSD RAM, 64K: просто 64 КБ), часы RP5C01
   (порты B4–B5) со временем платы, kanji ROM (порты D8–DB, JIS уровней 1 и 2) со шрифтом из файла
@@ -51,10 +51,10 @@ SDRAM. ПЛИС плат — Xilinx Spartan-6 XC6SLX25. Вся работа с �
 
 Проверено на Mini G: C-BIOS и BIOS OCM (MSX BASIC 3.0), картриджи со звуком (PSG, MSX-MUSIC), экраны
 V9958 (в том числе YJK), Disk BASIC на `.dsk`, Nextor 2.1 на образе диска, игра с `.cas`, время платы и
-сохранение CMOS после перезапуска, kanji BASIC (`CALL KANJI`). На железе ещё не проверены: TAPE_IN / TAPE_OUT, джойстики,
+сохранение CMOS после перезапуска, kanji BASIC (`CALL KANJI`), турбо (Nextor на 7,16 МГц). На железе ещё не проверены: TAPE_IN / TAPE_OUT, джойстики,
 развёртка 50 Гц, режим V9938.
 
-Ещё нет (`docs/PLAN.md`): сборок для Karabas Go и Mini, турбо, чересстрочного
+Ещё нет (`docs/PLAN.md`): сборок для Karabas Go и Mini, чересстрочного
 режима из двух полей, SCC MegaRAM, FM-PAC, картриджей с батарейкой.
 
 ## BIOS и Nextor
@@ -134,6 +134,7 @@ Tape (Menu+F4), затем `RUN"CAS:"` (программы на BASIC), `BLOAD"C
 | Mapper A | Auto / None / Game Master 2 / Konami / Konami SCC / ASCII 8 / ASCII 16 / Linear 64K (серый, если Slot 1 не Cartridge A) | |
 | Mapper B | как Mapper A | |
 | VDP | V9958 (MSX2+) / V9938 (MSX2) | |
+| CPU | 3.58 MHz / 5.37 MHz / 7.16 MHz | Menu+T |
 | RAM | 512K mapper / 64K | |
 | FM (MSX-MUSIC) | On / Off | |
 | Tape input | CAS file / Tape in (TAPE_IN) | |
@@ -143,6 +144,11 @@ Tape (Menu+F4), затем `RUN"CAS:"` (программы на BASIC), `BLOAD"C
 «Menu» — клавиша Windows. Загрузка картриджа, BIOS или ROM Nextor, смена маппера, Slot 1, RAM или FM
 сбрасывают машину; загрузка кассеты — нет. Slot 1 ROM = Off оставляет дисковод или SD-интерфейс без
 ROM (только регистры) — для тестовых программ, которые работают с ними сами под C-BIOS.
+
+Турбо (CPU = 5,37 или 7,16 МГц) ускоряет ОЗУ и системные ROM; ввод-вывод и слоты 1 и 2 (картриджи,
+дисковод, Nextor) остаются на 3,58 МГц, поэтому дисководы и мапперы работают как раньше. Игры, которые
+рассчитаны на скорость Z80 на 3,58 МГц, идут быстрее, а кассете нужны 3,58 МГц (процедуры кассеты в
+BIOS отмеряют сигнал процессором).
 
 ## Клавиатура
 

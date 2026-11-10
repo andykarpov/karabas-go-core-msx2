@@ -27,8 +27,15 @@ start at byte 0 again (the counter is cleared by the writes):
     KANJI oooooooo OK
 Without the font (no --rom) it must fail.
 
+turbotest.rom (16 KB, no mapper) measures the clock of the CPU: it copies a counting loop into the RAM
+at C000 (page 3: RAM, fast in turbo; the cartridge itself is in slot 1, which turbo runs at 3.58 MHz),
+counts its rounds for 10 frames (JIFFY) and prints the count in hex: 53DC at 3.58 MHz (PAL),
+1.5 and 2 times that with sim_sys --turbo 1 / 2:
+    TURBO 53DC   (5.37 MHz: 7E19, 7.16 MHz: A855)
+
 usage: mkcarts.py OUTDIR      (writes konami.rom, konami_scc.rom, ascii8.rom, ascii16.rom, keys.rom,
-                               rammap.rom, fmtest.rom, kanjitest.rom, kanjifont.bin)
+                               rammap.rom, fmtest.rom, kanjitest.rom, kanjifont.bin,
+                               turbotest.rom)
 """
 import os
 import subprocess
@@ -415,6 +422,74 @@ chars:
 """
 
 
+TURBO = """
+CHPUT	equ	0x00A2
+JIFFY	equ	0xFC9E
+	org	0x4000
+	db	"AB"
+	dw	start
+	ds	12, 0
+start:
+	ld	sp, 0xF380
+	ld	hl, loop
+	ld	de, 0xC000
+	ld	bc, loop_end - loop
+	ldir
+	ei
+	call	0xC000
+	push	de
+	ld	hl, title
+	call	print
+	pop	de
+	ld	a, d
+	call	hex
+	ld	a, e
+	call	hex
+stop:	jr	stop
+
+; runs at C000: DE = the rounds in 10 frames
+loop:	ld	hl, JIFFY
+	ld	a, (hl)
+w0:	cp	(hl)
+	jr	z, w0
+	ld	a, (hl)
+	add	a, 10
+	ld	b, a
+	ld	de, 0
+lp:	inc	de
+	ld	a, (hl)
+	cp	b
+	jr	nz, lp
+	ret
+loop_end:
+
+hex:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	nib
+	pop	af
+nib:	and	15
+	add	a, '0'
+	cp	'9' + 1
+	jr	c, n1
+	add	a, 7
+n1:	jp	CHPUT
+
+print:	ld	a, (hl)
+	or	a
+	ret	z
+	push	hl
+	call	CHPUT
+	pop	hl
+	inc	hl
+	jr	print
+
+title:	db	"TURBO ", 0
+"""
+
+
 def plain(out, name, text):
     """a 16 KB cartridge without a mapper"""
     src = os.path.join(out, name + '.asm')
@@ -433,6 +508,7 @@ def main():
     plain(out, 'rammap', RAMMAP)
     plain(out, 'fmtest', FMTEST)
     plain(out, 'kanjitest', kanji_test())
+    plain(out, 'turbotest', TURBO)
     open(os.path.join(out, 'kanjifont.bin'), 'wb').write(kanji_font())
     for name, bank, init, reg in MAPPERS:
         src = os.path.join(out, name.lower() + '.asm')
