@@ -1,10 +1,13 @@
 // sim_sys: tb_sys (msx_system + SRAM model) under verilator.
 //
 //   sim_sys [--cbios DIR] [--rom FILE:ADDR ...] [--cart FILE] [--cart-b FILE] [--bios FILE] [--mapper-a N]
-//           [--pal] [--v9938] [--ram64] [--no-opll] [--audio-min N] [--audio-max N] [--frames N] [--ppm OUT] [--every N] [--key F:CODE[,CODE]] [--hash]
+//           [--pal] [--v9938] [--ram64] [--rtc YYMMDDWHHMMSS] [--no-opll] [--audio-min N] [--audio-max N] [--frames N] [--ppm OUT] [--every N] [--key F:CODE[,CODE]] [--hash]
 //           [--disk FILE.dsk [--fdd-latency MS] [--fdd-drop N] [--save-disk OUT]]
 //           [--nextor [--nextor-rom FILE]] [--hdd FILE [--save-hdd OUT]] [--no-slot1-rom]
 //
+// --rtc YYMMDDWHHMMSS: the clock registers of kg_mcu (rtc_mode 3: 13 BCD digits) as the firmware has
+// them, the start pulse of msx2_rtc_init when the machine leaves its reset; the RP5C01 is printed at
+// the end ("rtc 20YY-MM-DD w W HH:MM:SS", the year of the chip + 1980).
 // --cbios DIR: C-BIOS MSX2+ EU from DIR (src/roms) at the places of msx2_slots, as core.json has it:
 // main 020000, sub 030000, MSX-MUSIC 02C000, logo 03C000. --fast-logo: instead of the logo ROM
 // a stub of 17 bytes at 03C000: the ident C-BIOS looks for ("C-BIOS Logo ROM" at 8000) and a RET at
@@ -206,6 +209,7 @@ static void mcu_clk() {
 	}
 }
 
+static uint8_t rtc_mem[256];
 static void tick() {
 	ticks++;
 	bool step = false;
@@ -215,8 +219,11 @@ static void tick() {
 		top->clk = !top->clk; step = true;
 		if (top->clk) { clks++; clk_rise = true; top->clk21 = !top->clk21; vdp_rise = top->clk21; }
 	}
+	uint8_t rtc_a_before = top->rtc_a;
 	if (step) top->eval();
 	if (clk_rise && (!disk.empty() || !hdd.empty())) mcu_clk();
+	// kg_mcu_rtc: a RAM read on the clock: rtc_do after an edge is the register of rtc_a before it
+	if (clk_rise) top->rtc_do = rtc_mem[rtc_a_before];
 	if (dbg && top->dbg_border != dbg_b) { printf("frame %d y %d border %d\n", frames, top->dbg_y, top->dbg_border); dbg_b = top->dbg_border; }
 	{ bool isr = !top->cpu_m1_n && top->cpu_a == 0x38; if (isr && !prev_isr) isr_cnt++; prev_isr = isr; }
 	// SIM_TRACE=N: the first N opcode fetches (address, the byte at the end of the read)
@@ -318,7 +325,8 @@ int main(int argc, char **argv) {
 	std::vector<std::pair<std::string, uint32_t>> roms;
 	std::string cart_a, cart_b, bios, ppm;
 	int nframes = 60, every = 0, mapper_a = 0;
-	bool pal = false, v9938 = false, fast_logo = false, bios_first = false, hash = false, fdd = false, ram64 = false, no_opll = false;
+	bool pal = false, v9938 = false, fast_logo = false, bios_first = false, hash = false;
+	std::string rtc_s; uint8_t rtc_regs[256] = {0}; bool rtc_on = false, fdd = false, ram64 = false, no_opll = false;
 	int audio_min = -1, audio_max = -1;
 	std::string save_disk, cas, save_hdd, nextor_rom;
 	bool nextor = false, no_slot1_rom = false;
@@ -342,6 +350,7 @@ int main(int argc, char **argv) {
 		else if (a == "--v9938") v9938 = true;
 		else if (a == "--fast-logo") fast_logo = true;
 		else if (a == "--bios-first") bios_first = true;
+		else if (a == "--rtc") { rtc_s = next(); rtc_on = rtc_s.size() == 13; if (!rtc_on) { fprintf(stderr, "--rtc YYMMDDWHHMMSS\n"); return 1; } }
 		else if (a == "--ram64") ram64 = true;
 		else if (a == "--no-opll") no_opll = true;
 		else if (a == "--audio-min") audio_min = atoi(next().c_str());
@@ -429,7 +438,17 @@ int main(int argc, char **argv) {
 		// cartridge B after the CAS file: its load starts with the slot of the CAS (see file_load)
 		if (!cart_b.empty()) file_load(load(cart_b.c_str()), 1);
 	}
+	if (rtc_on) {
+		auto d = [&](int i) { return (uint8_t)(rtc_s[i] - '0'); };
+		// S1 S10 MI1 MI10 H1 H10 D1 D10 MO1 MO10 Y1 Y10 W
+		uint8_t v[13] = { d(12), d(11), d(10), d(9), d(8), d(7), d(5), d(4), d(3), d(2), d(1), d(0), d(6) };
+		memcpy(rtc_regs, v, 13);
+		memcpy(rtc_mem, rtc_regs, 256);
+	}
 	top->reset = 0;
+	if (rtc_on) {
+		top->rtc_start = 1; clk_cycles(1); top->rtc_start = 0;
+	}
 	int f0 = frames;
 	std::map<int, std::vector<int>> release;
 	bool upd = false;
@@ -457,6 +476,13 @@ int main(int argc, char **argv) {
 		}
 	}
 	printf("%d frames, %llu clk\n", nframes, (unsigned long long)clks);
+	if (rtc_on) {
+		uint64_t r = top->dbg_rtc;
+		int sec = r & 0x7F, min = (r >> 7) & 0x7F, hou = (r >> 14) & 0x3F, wee = (r >> 20) & 7, day = (r >> 23) & 0x3F,
+		    mon = (r >> 29) & 0x1F, yea = (r >> 34) & 0xFF, leap = (r >> 42) & 3, h24 = (r >> 44) & 1;
+		int y = ((yea >> 4) * 10 + (yea & 15)) + 1980;
+		printf("rtc %04d-%02x-%02x w %d %02x:%02x:%02x leap %d 24h %d\n", y, mon, day, wee, hou, min, sec, leap, h24);
+	}
 	{
 		int r = amax - amin;
 		bool bad = (audio_min >= 0 && r < audio_min) || (audio_max >= 0 && r > audio_max);

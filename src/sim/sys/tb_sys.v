@@ -7,6 +7,10 @@
 module tb_sys (
 	input wire clk,
 	input wire clk21,
+	input wire rtc_start,
+	output wire [7:0] rtc_a,
+	input wire [7:0] rtc_do,
+	output wire [47:0] dbg_rtc,
 	input wire reset,
 	input wire rom_active,
 	input wire [31:0] rom_addr,
@@ -80,7 +84,7 @@ wire [7:0] vdp_r, vdp_g, vdp_b;
 wire vdp_hs_n, vdp_vs_n, vdp_blank;
 
 msx_system #(.TAPE_SILENT(100), .TAPE_SYNC(32)) sys (
-	.clk(clk), .clk21(clk21), .reset(reset),
+	.clk(clk), .clk21(clk21), .reset(reset), .rtc_start(rtc_start), .rtc_a(rtc_a), .rtc_do(rtc_do),
 	.rom_active(rom_active), .rom_addr(rom_addr), .rom_data(rom_data), .rom_wr(rom_wr),
 	.file_reset(file_reset), .file_active(file_active), .file_slot(file_slot), .file_addr(file_addr), .file_data(file_data),
 	.file_wr(file_wr),
@@ -102,6 +106,9 @@ assign vs = ~vdp_vs_n;
 assign de = ~vdp_blank;
 
 assign cpu_a = sys.msx2.a;
+// the RP5C01: { 0, 1224, leap, year, month, day, week, hour, minute, second } (BCD)
+assign dbg_rtc = { 3'd0, sys.msx2.rtc.reg_1224, sys.msx2.rtc.reg_leap, sys.msx2.rtc.reg_yea, sys.msx2.rtc.reg_mon,
+	sys.msx2.rtc.reg_day, sys.msx2.rtc.reg_wee, sys.msx2.rtc.reg_hou, sys.msx2.rtc.reg_min, sys.msx2.rtc.reg_sec };
 assign cpu_m1_n = sys.msx2.m1_n;
 assign cpu_di = sys.msx2.d_to_cpu;
 assign cpu_rd_n = sys.msx2.rd_n;

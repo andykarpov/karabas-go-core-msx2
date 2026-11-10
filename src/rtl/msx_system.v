@@ -44,6 +44,9 @@ module msx_system #(
 	input wire clk,
 	input wire clk21,          // the VDP: clk / 2, rising edges with those of clk
 	input wire reset,          // the reset switch, the mcu busy
+	input wire rtc_start,      // a pulse: the mcu is done with its start, the clock registers of kg_mcu are set
+	output wire [7:0] rtc_a,   // the clock registers of kg_mcu (rtc_mode 3): the address, the data a clock later
+	input wire [7:0] rtc_do,
 
 	// the ROM loader of the mcu
 	input wire rom_active,
@@ -183,7 +186,38 @@ always @(posedge clk) begin
 	mapper_reset <= mappers_d != { nextor, opll, ram_mapper, mapper_b, slot_a };
 end
 
-wire msx_reset = reset || rom_active || ioctl_download || mapper_reset || eject;
+// img_sdc (see below): the mounts by slot
+wire [7:0] sdc_img_mounted;
+wire [63:0] sdc_img_size;
+
+// Nextor: the first mount of a hard disk image (none before) resets the machine, so Nextor finds it: at
+// the start of the core the firmware mounts the image after the machine started (Nextor had found no
+// drive, a blank screen); another image later is a disk change, no reset
+reg hd_present = 1'b0;
+reg [3:0] hd_reset = 4'd0;
+always @(posedge clk) begin
+	if (hd_reset != 4'd0) hd_reset <= hd_reset - 4'd1;
+	if (sdc_img_mounted[6]) begin
+		hd_present <= sdc_img_size[31:0] != 32'd0 || sdc_img_size[63:32] != 32'd0;
+		if (!hd_present && nextor && (sdc_img_size != 64'd0)) hd_reset <= 4'd15;
+	end
+end
+
+wire msx_reset = reset || rom_active || ioctl_download || mapper_reset || eject || hd_reset != 4'd0;
+
+// the RTC: the time of the board at the start
+wire rtc_init_wr, rtc_init_adr0;
+wire [7:0] rtc_init_data;
+msx2_rtc_init rtc_init (
+	.clk(clk),
+	.start(rtc_start),
+	.rtc_a(rtc_a),
+	.rtc_do(rtc_do),
+	.wr(rtc_init_wr),
+	.adr0(rtc_init_adr0),
+	.data(rtc_init_data),
+	.busy()
+);
 
 // ------------------------------------------------------------------ input
 
@@ -208,8 +242,6 @@ wire sd_rd, sd_wr, sd_ack, sd_buff_wr;
 wire [8:0] sd_buff_addr;
 wire [7:0] sd_buff_dout, sd_buff_din;
 
-wire [7:0] sdc_img_mounted;
-wire [63:0] sdc_img_size;
 // img_sdc (see below), declared here for msx1
 wire fdd_sdc_rd, fdd_sdc_wr, hd_sdc_rd, hd_sdc_wr;
 wire [31:0] fdd_sector, hd_sector;
@@ -263,6 +295,9 @@ msx2 #(.FDD_PHYS(FDD_PHYS)) msx2 (
 	.vram_we_n(vram_we_n),
 	.vram_dout(vram_dout),
 	.vram_din(vram_din),
+	.rtc_init_wr(rtc_init_wr),
+	.rtc_init_adr0(rtc_init_adr0),
+	.rtc_init_data(rtc_init_data),
 	.audio(msx_audio),
 	.ps2_key(ps2_key),
 	.joy0(joy_swap ? joy_b : joy_a),

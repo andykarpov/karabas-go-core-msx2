@@ -27,6 +27,10 @@ module msx2 #(parameter FDD_PHYS = 0)
 	output        vram_we_n,
 	output  [7:0] vram_dout,
 	input  [15:0] vram_din,
+	// karabas: writes to the RTC from msx2_rtc_init (the time of the board at the start), one clock each
+	input         rtc_init_wr,
+	input         rtc_init_adr0,
+	input   [7:0] rtc_init_data,
 	output [15:0] audio,
 	input  [10:0] ps2_key,
 	input   [5:0] joy0,
@@ -243,12 +247,12 @@ rtc rtc
 	.clk21m(clk),
 	.reset(reset),
 	.clkena(clk_en_3m58_p),
-	.req(rtc_cs & ~rtc_cs_d),
+	.req((rtc_cs & ~rtc_cs_d) | rtc_init_wr),
 	.ack(),
-	.wrt(~wr_n),
-	.adr(a),
+	.wrt(rtc_init_wr | ~wr_n),
+	.adr(rtc_init_wr ? { 15'd0, rtc_init_adr0 } : a),
 	.dbi(d_from_rtc),
-	.dbo(d_from_cpu)
+	.dbo(rtc_init_wr ? rtc_init_data : d_from_cpu)
 );
 
 //  -----------------------------------------------------------------------------

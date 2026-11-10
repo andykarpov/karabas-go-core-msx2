@@ -221,11 +221,12 @@ wire [23:0] img_q_di;
 // 3 x 0, the lines of a frame } of msx2_fb
 wire [13:0] fb_dbg;
 wire msx_reset_dbg;
+wire [7:0] rtc_a, rtc_do;
 
 kg_mcu #(
 	.BURST_MAX_MHZ(32),  // Rev.G has MCU_SCK on a global clock pin
 	.CS_FILTER(3),
-	.ENABLE_RTC(0),
+	.ENABLE_RTC(1),      // the clock registers (rtc_mode 3): msx2_rtc_init sets the RP5C01 from them
 	.ENABLE_UART(0),
 	.ENABLE_MATRIX(0),
 	.ENABLE_DEBUG(1),    // the state of the frame buffer and the reset of the machine (AT+KARABAS=debug:1)
@@ -286,8 +287,9 @@ kg_mcu #(
 	// not used by this core
 	.PS2_COMMAND(16'h0000),
 	.PS2_COMMAND_WR(1'b0),
-	.RTC_A(8'h00),
+	.RTC_A(rtc_a),
 	.RTC_DI(8'h00),
+	.RTC_DO(rtc_do),
 	.RTC_CS(1'b0),
 	.RTC_WR_N(1'b1),
 	.UART_TX_DATA(8'h00),
@@ -363,9 +365,16 @@ wire [7:0] vdp_r, vdp_g, vdp_b;
 wire vdp_hs_n, vdp_vs_n, vdp_dhclk;
 wire [15:0] msx_audio;
 
+// the start of the machine after the mcu (its busy falls): the clock registers of kg_mcu are set then
+reg mcu_busy_d = 1'b1;
+always @(posedge clk_sys) mcu_busy_d <= mcu_busy;
+
 msx_system msx (
 	.clk(clk_sys),
 	.clk21(clk21),
+	.rtc_start(mcu_busy_d && !mcu_busy),
+	.rtc_a(rtc_a),
+	.rtc_do(rtc_do),
 	.reset(areset || sw_reset || mcu_busy),
 	.rom_active(rom_active),
 	.rom_addr(rom_addr),
