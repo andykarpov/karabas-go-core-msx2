@@ -2,16 +2,21 @@
 `default_nettype wire
 
 /*
- MSX1 core for Karabas Mini rev.G (HDMI, PCM5102, PCM1808).
+ MSX2 core for Karabas Mini rev.G (HDMI, PCM5102, PCM1808).
 
- The machine is MiSTer MSX1 (rtl/msx, see docs/UPSTREAM.md) in msx_system; all file work goes
- through the firmware: the ROMs of core.json (C-BIOS) by the ROM loader, the cartridges and a BIOS
- file by the FL items of the OSD (the file loader of kg_mcu, FILELOAD_SLOT), see msx_system.v.
+ The machine is msx2 (MiSTer MSX1 with the ESE-VDP of OCM-PLD, rtl/msx, see docs/UPSTREAM.md) in
+ msx_system; all file work goes through the firmware: the ROMs of core.json (C-BIOS) by the ROM
+ loader, the cartridges and a BIOS file by the FL items of the OSD (the file loader of kg_mcu,
+ FILELOAD_SLOT), see msx_system.v.
 
  Clocks: one PLL, VCO 600 MHz (50 * 12): clk_sys 42.857 MHz (/14, 12 x 3.57 MHz: the machine, the
- SRAM, the MCU link, audio), clk_vga 25.0 MHz (/24, 640 x 480: msx_video reads its frame buffer,
- the OSD, HDMI), clk_8 8.0 MHz (/75, FT_CLK_OUT: the FT812 must always have its clock, see
+ SRAM, the MCU link, audio, the SDRAM of the frame buffer), clk21 21.43 MHz (/28, the VDP: its rising
+ edges with every other one of clk_sys), clk_vga 25.0 MHz (/24, 640 x 480: msx2_fb reads its frame
+ buffer, the OSD, HDMI), clk_8 8.0 MHz (/75, FT_CLK_OUT: the FT812 must always have its clock, see
  karabas-go-notes ft-clk-out-required). HDMI: kg_dcm 5 x clk_vga and its inverse.
+ Video: the 15 kHz picture of the VDP through the frame buffer in the SDRAM (msx2_fb) to 640 x 480 at
+ 60 Hz. FLASH_CS_N (T3) is the /CS of the SDRAM on Mini G2 (on rev G the pin goes to the config flash,
+ never populated): 0.
 
  Soft switches (the index of the item in the osd of core_minig.json, file items included; the
  pages of the menu do not change it; separators and the page entry are not registers):
@@ -21,7 +26,8 @@
    page Machine: 13 Slot 1 (cartridge A / disk drive / Nextor)   14 Slot 1 ROM (on / off: the disk
    ROM or the Nextor ROM reads FF, for tests under C-BIOS)   15 Mapper A   16 Mapper B   17 -
    18 RAM (512K mapper / 64K)   19 FM (MSX-MUSIC on / off)   20 Tape input (CAS file / TAPE_IN)
-   21 -   22 BIOS (FL 2)   23 Nextor ROM (FL 5)
+   21 VDP (V9958, MSX2+ / V9938, MSX2), pinned by "index" in core.json; BIOS (FL 2), Nextor ROM (FL 5)
+   7 Video: 0 Auto (R9 of the VDP: the BIOS), 1 PAL 50 Hz, 2 NTSC 60 Hz
 */
 
 module karabas_minig_top (
@@ -111,15 +117,6 @@ module karabas_minig_top (
 
 // ------------------------------------------------------------------ unused
 
-assign SDR_BA = 2'b11;
-assign SDR_A = 13'h1FFF;
-assign SDR_CLK = 1'b1;
-assign SDR_DQM = 2'b11;
-assign SDR_WE_N = 1'b1;
-assign SDR_CAS_N = 1'b1;
-assign SDR_RAS_N = 1'b1;
-assign SDR_DQ = 16'bz;
-
 assign WA = 3'b000;
 assign WCS_N = 2'b11;
 assign WRD_N = 1'b1;
@@ -133,7 +130,7 @@ assign UART_RX = 1'bz;
 assign UART_TX = 1'bz;
 assign UART_CTS = 1'bz;
 
-assign FLASH_CS_N = 1'b1;
+assign FLASH_CS_N = 1'b0;  // the SDRAM /CS of Mini G2, see above
 assign FLASH_DI = 1'b1;
 assign FLASH_SCK = 1'b0;
 assign FLASH_WP_N = 1'b1;
@@ -143,7 +140,7 @@ assign MRD_N = 2'b00;  // SRAM /OE: always on, msx_sram drives MD only with /WE
 
 // ------------------------------------------------------------------ clocks
 
-wire clk_sys, clk_vga, clk_8;
+wire clk_sys, clk_vga, clk_8, clk21;
 wire locked, lockedx5, areset;
 wire clk_hdmi, clk_hdmi_n;
 
@@ -155,7 +152,8 @@ kg_pll #(
 	.CLKOUT0_DIVIDE(14),
 	.CLKOUT1_DIVIDE(24),
 	.CLKOUT2_DIVIDE(75),
-	.BUFG_MASK(6'b000111)
+	.CLKOUT3_DIVIDE(28),
+	.BUFG_MASK(6'b001111)
 ) pll (
 	.clk_in(CLK_50MHZ),
 	.rst(1'b0),
@@ -165,6 +163,7 @@ kg_pll #(
 assign clk_sys = pll_clk[0];
 assign clk_vga = pll_clk[1];
 assign clk_8 = pll_clk[2];
+assign clk21 = pll_clk[3];
 assign areset = ~locked;
 
 kg_dcm #(
@@ -330,15 +329,15 @@ assign SD_CLK = mcu_sck_ibufg;
 
 // ------------------------------------------------------------------ soft switches
 
-wire [21*8-1:0] sw;
-kg_soft_switches #(.N(21)) soft_switches (
+wire [22*8-1:0] sw;
+kg_soft_switches #(.N(22)) soft_switches (
 	.clk(clk_sys),
 	.command(softsw_command),
 	.regs(sw),
 	.upd()
 );
 wire sw_tape_rewind = sw[5*8];
-wire sw_ntsc = sw[7*8];
+wire [1:0] sw_video = sw[7*8 +: 2];   // 0 Auto, 1 PAL, 2 NTSC
 wire sw_joy_swap = sw[8*8];
 wire sw_reset = sw[11*8];
 wire sw_eject = sw[12*8];
@@ -350,15 +349,17 @@ wire [3:0] sw_mapper_b = sw[16*8 +: 4];
 wire sw_ram64 = sw[18*8];
 wire sw_no_fm = sw[19*8];
 wire sw_tape_line = sw[20*8];
+wire sw_v9938 = sw[21*8];
 
 // ------------------------------------------------------------------ the machine
 
-wire [3:0] vdp_col;
-wire vdp_ce_pix, vdp_hor_active, vdp_vert_active;
+wire [7:0] vdp_r, vdp_g, vdp_b;
+wire vdp_hs_n, vdp_vs_n, vdp_dhclk;
 wire [15:0] msx_audio;
 
 msx_system msx (
 	.clk(clk_sys),
+	.clk21(clk21),
 	.reset(areset || sw_reset || mcu_busy),
 	.rom_active(rom_active),
 	.rom_addr(rom_addr),
@@ -372,7 +373,9 @@ msx_system msx (
 	.file_wr(file_wr),
 	.mapper_a(sw_mapper_a),
 	.mapper_b(sw_mapper_b),
-	.pal(~sw_ntsc),
+	.pal(sw_video == 2'd1),
+	.pal_auto(sw_video == 2'd0),
+	.v9958(~sw_v9938),
 	.joy_swap(sw_joy_swap),
 	.tape_rewind(sw_tape_rewind),
 	.tape_line(sw_tape_line),
@@ -405,10 +408,15 @@ msx_system msx (
 	.kb_scancode_upd(kb_scancode_upd),
 	.joy_l(joy_l),
 	.joy_r(joy_r),
-	.vdp_col(vdp_col),
-	.vdp_ce_pix(vdp_ce_pix),
-	.vdp_hor_active(vdp_hor_active),
-	.vdp_vert_active(vdp_vert_active),
+	.vdp_r(vdp_r),
+	.vdp_g(vdp_g),
+	.vdp_b(vdp_b),
+	.vdp_hs_n(vdp_hs_n),
+	.vdp_vs_n(vdp_vs_n),
+	.vdp_dhclk(vdp_dhclk),
+	.vdp_dlclk(),
+	.vdp_blank(),
+	.vdp_interlace(),
 	.audio(msx_audio),
 	.MA(MA),
 	.MD(MD),
@@ -419,17 +427,29 @@ msx_system msx (
 
 wire [23:0] video_rgb;
 wire video_hs, video_vs, video_de;
-msx_video video (
-	.clk(clk_sys),
-	.ce_pix(vdp_ce_pix),
-	.hor_active(vdp_hor_active),
-	.vert_active(vdp_vert_active),
-	.col(vdp_col),
+msx2_fb video (
+	.clk21(clk21),
+	.clk_sys(clk_sys),
 	.clk_vga(clk_vga),
+	.reset(areset),
+	.r_i(vdp_r[7:2]),
+	.g_i(vdp_g[7:2]),
+	.b_i(vdp_b[7:2]),
+	.hs_n_i(vdp_hs_n),
+	.vs_n_i(vdp_vs_n),
+	.dhclk(vdp_dhclk),
 	.rgb(video_rgb),
 	.hs(video_hs),
 	.vs(video_vs),
-	.de(video_de)
+	.de(video_de),
+	.sdr_clk(SDR_CLK),
+	.sdr_a(SDR_A),
+	.sdr_ba(SDR_BA),
+	.sdr_dq(SDR_DQ),
+	.sdr_dqm(SDR_DQM),
+	.sdr_ras_n(SDR_RAS_N),
+	.sdr_cas_n(SDR_CAS_N),
+	.sdr_we_n(SDR_WE_N)
 );
 
 // the OSD commands of kg_mcu (clk_sys) into clk_vga: a word that changes is a command, it crosses

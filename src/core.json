@@ -1,7 +1,7 @@
 {
     "id": "msx2",
     "name": "MSX2",
-    "build": "26103108",
+    "build": "26111001",
     "visible": true,
     "type": "osd",
     "order": 19,
@@ -27,7 +27,7 @@
     {"type": "FL", "name": "Tape", "slot": 3, "extensions": ".cas", "dir": "/msx2", "hotkey": "Menu+F4", "enable_if": {"item": "Tape input", "value": "CAS file"}},
     {"index": 5, "type": "T", "name": "Tape rewind", "hotkey": "Menu+R", "enable_if": {"item": "Tape input", "value": "CAS file"}},
     {"type": "-"},
-    {"index": 7, "type": "S", "name": "Video", "options": ["PAL 50Hz", "NTSC 60Hz"], "default": 0, "hotkey": "Menu+V"},
+    {"index": 7, "type": "S", "name": "Video", "options": ["Auto", "PAL 50Hz", "NTSC 60Hz"], "default": 0, "hotkey": "Menu+V"},
     {"index": 8, "type": "S", "name": "Joysticks", "options": ["Normal", "Swap"], "default": 0, "hotkey": "Menu+J"},
     {"type": "-"},
     {"type": "M", "name": "Machine", "open": 1},
@@ -38,11 +38,12 @@
     {"index": 15, "type": "S", "name": "Mapper A", "options": ["Auto", "None", "Game Master 2", "Konami", "Konami SCC", "ASCII 8", "ASCII 16", "Linear 64K"], "default": 0, "page": 1, "enable_if": {"item": "Slot 1", "value": "Cartridge A"}},
     {"index": 16, "type": "S", "name": "Mapper B", "options": ["Auto", "None", "Game Master 2", "Konami", "Konami SCC", "ASCII 8", "ASCII 16", "Linear 64K"], "default": 0, "page": 1},
     {"type": "-", "page": 1},
+    {"index": 21, "type": "S", "name": "VDP", "options": ["V9958 (MSX2+)", "V9938 (MSX2)"], "default": 0, "page": 1},
     {"index": 18, "type": "S", "name": "RAM", "options": ["512K mapper", "64K"], "default": 0, "page": 1},
     {"index": 19, "type": "S", "name": "FM (MSX-MUSIC)", "options": ["On", "Off"], "default": 0, "page": 1},
     {"index": 20, "type": "S", "name": "Tape input", "options": ["CAS file", "Tape in"], "default": 0, "page": 1},
     {"type": "-", "page": 1},
-    {"type": "FL", "name": "BIOS", "slot": 2, "extensions": ".rom", "dir": "/msx2", "autoload": 1, "page": 1},
+    {"type": "FL", "name": "BIOS", "slot": 2, "extensions": ".dat,.rom", "dir": "/msx2", "autoload": 1, "page": 1},
     {"type": "FL", "name": "Nextor ROM", "slot": 5, "extensions": ".rom", "dir": "/msx2", "filename": "NEXTOR.ROM", "autoload": 1, "page": 1}
     ]
 }
