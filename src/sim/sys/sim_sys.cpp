@@ -1,10 +1,16 @@
 // sim_sys: tb_sys (msx_system + SRAM model) under verilator.
 //
-//   sim_sys --rom FILE:ADDR ... [--cart FILE] [--cart-b FILE] [--bios FILE] [--mapper-a N]
+//   sim_sys [--cbios DIR] [--rom FILE:ADDR ...] [--cart FILE] [--cart-b FILE] [--bios FILE] [--mapper-a N]
 //           [--pal] [--v9938] [--ram64] [--no-opll] [--audio-min N] [--audio-max N] [--frames N] [--ppm OUT] [--every N] [--key F:CODE[,CODE]] [--hash]
 //           [--disk FILE.dsk [--fdd-latency MS] [--fdd-drop N] [--save-disk OUT]]
 //           [--nextor [--nextor-rom FILE]] [--hdd FILE [--save-hdd OUT]] [--no-slot1-rom]
 //
+// --cbios DIR: C-BIOS MSX2+ EU from DIR (src/roms) at the places of msx2_slots, as core.json has it:
+// main 020000, sub 030000, MSX-MUSIC 02C000, logo 03C000. --fast-logo: instead of the logo ROM
+// a stub of 17 bytes at 03C000: the ident C-BIOS looks for ("C-BIOS Logo ROM" at 8000) and a RET at
+// 8010, where it calls the logo: no logo animation; and the wait of 120 frames after the logo in
+// the main ROM ("ld b,120 / call wait_b", 06 78 CD 2F 11 at 0E05 of C-BIOS 0.29a MSX2 / MSX2+) is 1
+// frame in the SRAM: a cartridge starts after about 10 frames instead of 200.
 // The ROMs go in through the ROM loader of the mcu (rom_active, one byte every 12 clocks, as a
 // burst at 32 MHz), the files through the file loader (FL slot 4 = cartridge A, 1 = B, 2 = BIOS).
 // The clocks: a tick of the VCO (600 MHz), clk every 14 ticks (42.857 MHz), clk21 every 28 (its
@@ -312,7 +318,7 @@ int main(int argc, char **argv) {
 	std::vector<std::pair<std::string, uint32_t>> roms;
 	std::string cart_a, cart_b, bios, ppm;
 	int nframes = 60, every = 0, mapper_a = 0;
-	bool pal = false, v9938 = false, hash = false, fdd = false, ram64 = false, no_opll = false;
+	bool pal = false, v9938 = false, fast_logo = false, hash = false, fdd = false, ram64 = false, no_opll = false;
 	int audio_min = -1, audio_max = -1;
 	std::string save_disk, cas, save_hdd, nextor_rom;
 	bool nextor = false, no_slot1_rom = false;
@@ -320,13 +326,21 @@ int main(int argc, char **argv) {
 	for (int i = 1; i < argc; i++) {
 		std::string a = argv[i];
 		auto next = [&]() { if (i + 1 >= argc) { fprintf(stderr, "%s: value?\n", a.c_str()); exit(1); } return std::string(argv[++i]); };
-		if (a == "--rom") { std::string v = next(); size_t c = v.rfind(':'); roms.push_back({v.substr(0, c), (uint32_t)strtoul(v.c_str() + c + 1, 0, 0)}); }
+		if (a == "--cbios") {
+			std::string d = next();
+			roms.push_back({d + "/cbios_main_msx2+_eu.rom", 0x20000});
+			roms.push_back({d + "/cbios_sub.rom", 0x30000});
+			roms.push_back({d + "/cbios_music.rom", 0x2C000});
+			roms.push_back({d + "/cbios_logo_msx2+.rom", 0x3C000});
+		}
+		else if (a == "--rom") { std::string v = next(); size_t c = v.rfind(':'); roms.push_back({v.substr(0, c), (uint32_t)strtoul(v.c_str() + c + 1, 0, 0)}); }
 		else if (a == "--cart") cart_a = next();
 		else if (a == "--cart-b") cart_b = next();
 		else if (a == "--bios") bios = next();
 		else if (a == "--mapper-a") mapper_a = atoi(next().c_str());
 		else if (a == "--pal") pal = true;
 		else if (a == "--v9938") v9938 = true;
+		else if (a == "--fast-logo") fast_logo = true;
 		else if (a == "--ram64") ram64 = true;
 		else if (a == "--no-opll") no_opll = true;
 		else if (a == "--audio-min") audio_min = atoi(next().c_str());
@@ -374,6 +388,20 @@ int main(int argc, char **argv) {
 	top->eval();
 	clk_cycles(100);
 	for (auto &r : roms) rom_load(load(r.first.c_str()), r.second);
+	if (fast_logo) {
+		std::vector<uint8_t> stub(17, 0);
+		memcpy(stub.data(), "C-BIOS Logo ROM", 15);
+		stub[16] = 0xC9;   // 8010: RET
+		rom_load(stub, 0x3C000);
+		std::vector<uint8_t> one(1, 1);
+		top->dbg_sram_addr = 0x20E05; top->eval();
+		if (top->dbg_sram_q == 0x06) {
+			top->dbg_sram_addr = 0x20E06; top->eval();
+			if (top->dbg_sram_q == 0x78) rom_load(one, 0x20E06);
+			else printf("fast-logo: no wait at 0E05\n");
+		}
+		else printf("fast-logo: no wait at 0E05\n");
+	}
 	if (!bios.empty()) file_load(load(bios.c_str()), 2);
 	if (!cart_a.empty()) file_load(load(cart_a.c_str()), 4);
 	if (!cart_b.empty() && cas.empty()) file_load(load(cart_b.c_str()), 1);

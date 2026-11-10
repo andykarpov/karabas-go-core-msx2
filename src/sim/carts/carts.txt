@@ -1,17 +1,17 @@
 # The cartridge tests of run_carts.sh: name, cartridge (sim/build/carts, mkcarts.py), mapper switch
 # (0 = auto), frames, the CRC-32 of the last output frame (sim_sys --hash), more sim_sys arguments.
-# The frame shows "<MAPPER> <bank digits> OK" under the C-BIOS screen; "wrong" is Konami with the
+# The frame (sim_sys --fast-logo) shows "<MAPPER> <bank digits> OK" under the C-BIOS screen; "wrong" is Konami with the
 # ASCII 8 mapper, which must not reach OK (its init writes 6000 and maps its own code away).
 # rammap: the memory mapper of the RAM, "RAMMAP 20 OK"; rammap64 the same with the RAM of 64 KB,
 # which must show "RAMMAP 00 FAIL".
-# fm: "FM OK" (the MSX-MUSIC signature in slot 2) and a note of the OPLL on the audio output; fm_off
+# fm: "FM OK" (the MSX-MUSIC ROM of C-BIOS in slot 3-1) and a note of the OPLL on the audio output; fm_off
 # the same with the OPLL off: "FM NONE" and silence (sim_sys --audio-min / --audio-max).
-konami      konami.rom      0 200 5ce4052c
-konami_scc  konami_scc.rom  0 200 f608e9ab
-ascii8      ascii8.rom      0 200 9260ae50
-ascii16     ascii16.rom     0 200 9cfa9a8f
-wrong       konami.rom      5 200 efe92f55
-rammap      rammap.rom      0 200 15b5c173
-rammap64    rammap.rom      0 200 d2f0a01e --ram64
-fm          fmtest.rom      0 200 855b4a95 --audio-min 2000
-fm_off      fmtest.rom      0 200 3baa5e8b --no-opll --audio-max 100
+konami      konami.rom      0 75 dd816ee2
+konami_scc  konami_scc.rom  0 75 1ee6e71d
+ascii8      ascii8.rom      0 75 c8fd8e4d
+ascii16     ascii16.rom     0 75 020d7ef1
+wrong       konami.rom      5 75 d80d96af
+rammap      rammap.rom      0 75 9c0eb41c
+rammap64    rammap.rom      0 75 9e291fac --ram64
+fm          fmtest.rom      0 75 e4477229 --audio-min 2000
+fm_off      fmtest.rom      0 75 59b16c31 --no-opll --audio-max 100
