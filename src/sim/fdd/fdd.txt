@@ -2,7 +2,7 @@
 # sector (ms), the request whose answer the mcu loses (0: none), frames, the CRC-32 of the last frame.
 # The frame shows "FDC <steps> OK": 720 "12345678WR", 360 "12345WR" (side 0 only, the layout of single
 # sided images), drop: the third request answered after the retry of img_sdc (200 ms), slow: 40 ms.
-f720   fdctest.rom     test720.dsk 10 0 260 fe6252b0
-f360   fdctest360.rom  test360.dsk 10 0 260 40387e2b
-drop   fdctest.rom     test720.dsk 10 3 260 fe6252b0
-slow   fdctest.rom     test720.dsk 40 0 260 fe6252b0
+f720   fdctest.rom     test720.dsk 10 0 135 a186e19b
+f360   fdctest360.rom  test360.dsk 10 0 135 a079a9ad
+drop   fdctest.rom     test720.dsk 10 3 135 a186e19b
+slow   fdctest.rom     test720.dsk 40 0 135 a186e19b

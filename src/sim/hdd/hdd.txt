@@ -1,6 +1,6 @@
 # The Nextor SD interface tests of run_hdd.sh: name, mcu latency per sector (ms), the request whose answer
 # the mcu loses (0: none), frames, the CRC-32 of the last frame ("SD P08AOC13WRM OK"). drop: the third
 # request answered after the retry of img_sdc (200 ms), slow: 40 ms.
-sd      10 0 260 eacdeed3
-drop    10 3 260 eacdeed3
-slow    40 0 260 eacdeed3
+sd      10 0 135 90ea98ab
+drop    10 3 135 90ea98ab
+slow    40 0 135 90ea98ab

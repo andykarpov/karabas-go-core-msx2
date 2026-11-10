@@ -415,10 +415,11 @@ int main(int argc, char **argv) {
 		file_load(d, 3);
 		clk_cycles(2000);
 		size_t bad = 0;
-		for (size_t i = 0; i < d.size() && i < 0x40000; i++) {
-			top->dbg_sram_addr = 0x3C0000 + i;
+		// the tape of msx_tape: 3E0000, 128 KB
+		for (size_t i = 0; i < d.size() && i < 0x20000; i++) {
+			top->dbg_sram_addr = 0x3E0000 + i;
 			top->eval();
-			if (top->dbg_sram_q != d[i] && bad++ < 4) printf("cas: SRAM %06zx %02x, file %02x\n", 0x3C0000 + i, top->dbg_sram_q, d[i]);
+			if (top->dbg_sram_q != d[i] && bad++ < 4) printf("cas: SRAM %06zx %02x, file %02x\n", 0x3E0000 + i, top->dbg_sram_q, d[i]);
 		}
 		printf("cas: %zu bytes, %zu wrong in the SRAM\n", d.size(), bad);
 		// cartridge B after the CAS file: its load starts with the slot of the CAS (see file_load)
