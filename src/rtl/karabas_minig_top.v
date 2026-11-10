@@ -217,13 +217,18 @@ wire [8:0] img_data_addr;
 wire [15:0] img_sum;
 wire [23:0] img_q_di;
 
+// debug (declared before kg_mcu, XST wants that): the reset of the machine, { valid, SDRAM ready,
+// 3 x 0, the lines of a frame } of msx2_fb
+wire [13:0] fb_dbg;
+wire msx_reset_dbg;
+
 kg_mcu #(
 	.BURST_MAX_MHZ(32),  // Rev.G has MCU_SCK on a global clock pin
 	.CS_FILTER(3),
 	.ENABLE_RTC(0),
 	.ENABLE_UART(0),
 	.ENABLE_MATRIX(0),
-	.ENABLE_DEBUG(0),
+	.ENABLE_DEBUG(1),    // the state of the frame buffer and the reset of the machine (AT+KARABAS=debug:1)
 	.ENABLE_IMG(1),      // the disk drive: the .dsk image of the F item
 	.ENABLE_IMG_WP(1),   // write protected images (caps bit 5, IMG_WP)
 	.ENABLE_FILE(1),
@@ -294,7 +299,7 @@ kg_mcu #(
 	.UART_DLL_WR(1'b0),
 	.MATRIX_CMD(24'h000000),
 	.MATRIX_CMD_WR(1'b0),
-	.DEBUG_ADDR(16'h0000),
+	.DEBUG_ADDR({ 1'b0, msx_reset_dbg, fb_dbg }),
 	.DEBUG_DATA(16'h0000),
 	.IMG_MOUNTED(img_mounted),
 	.IMG_SIZE(img_size),
@@ -353,6 +358,7 @@ wire sw_v9938 = sw[21*8];
 
 // ------------------------------------------------------------------ the machine
 
+assign msx_reset_dbg = areset || sw_reset || mcu_busy;
 wire [7:0] vdp_r, vdp_g, vdp_b;
 wire vdp_hs_n, vdp_vs_n, vdp_dhclk;
 wire [15:0] msx_audio;
@@ -442,6 +448,7 @@ msx2_fb video (
 	.hs(video_hs),
 	.vs(video_vs),
 	.de(video_de),
+	.dbg(fb_dbg),
 	.sdr_clk(SDR_CLK),
 	.sdr_a(SDR_A),
 	.sdr_ba(SDR_BA),

@@ -11,8 +11,10 @@
    H_START (64: the 512 dots of the wide modes in the middle) of the lines V_START (NTSC 19, PAL 49:
    a frame over 287 lines is PAL) to V_START + 239. Dots 620..639 of the window are past the end of
    the line of the VDP (684 dots): the output shows them black. A pixel is RGB565 of the 6-bit R / G / B
-   of the VDP; a line of 640 words in a capture buffer of two lines, then a request to the SDRAM side
-   (a toggle). Interlace: the fields go to the same lines (no weave yet).
+   of the VDP; a line of 640 words in a capture buffer of two lines; the start of the next line sends
+   the request of a window line to the SDRAM side (a toggle), whatever the number of its dots (a dot
+   in the clock of a line start is not counted: 683 or 684 a line, by the phase of dhclk).
+   Interlace: the fields go to the same lines (no weave yet).
  - SDRAM (clk_sys, msx2_fb_sdram.v): a line in two rows, row = { frame, line, half }, three frames:
    the line 0 of a new frame ends the frame before (done) and moves the writer to the frame that is
    neither done nor being shown. The output takes done at its frame start: whole frames only, no
@@ -46,6 +48,9 @@ module msx2_fb #(
 	output reg hs = 1'b0,
 	output reg vs = 1'b0,
 	output reg de = 1'b0,
+
+	// debug (clk_sys): { valid, the SDRAM ready, 0, 0, 0, the lines of the last frame of the VDP (9 bits) }
+	output wire [13:0] dbg,
 
 	// SDRAM
 	output wire sdr_clk,
@@ -98,6 +103,13 @@ always @(posedge clk21) begin
 		since <= 11'd0;
 		dot <= 10'd0;
 		if (!vs_rise && vline != 9'h1FF) vline <= vline + 1'd1;
+		// the line that ends here, if it is a line of the window, to the SDRAM side
+		if (vline >= v_start && l < H) begin
+			cap_line <= l[7:0];
+			cap_buf <= cbuf;
+			cap_tgl <= ~cap_tgl;
+			cbuf <= ~cbuf;
+		end
 	end
 	else if (dhclk) begin
 		if (dot != 10'h3FF) dot <= dot + 1'd1;
@@ -106,12 +118,6 @@ always @(posedge clk21) begin
 			// { buf, half, word }: words 0..319, 320..639
 			cb_waddr <= (p < 10'd320) ? { cbuf, 1'b0, p[8:0] } : { cbuf, 1'b1, p[8:0] - 9'd320 };
 			cb_wdata <= { r_i[5:1], g_i, b_i[5:1] };
-			if (p == W_LINE - 1'd1) begin
-				cap_line <= l[7:0];
-				cap_buf <= cbuf;
-				cap_tgl <= ~cap_tgl;
-				cbuf <= ~cbuf;
-			end
 		end
 	end
 end
@@ -177,6 +183,10 @@ always @(posedge clk_sys) begin
 	if (reset) valid <= 1'b0;
 end
 
+wire sdr_ready;
+reg [8:0] lines_s = 9'd0;
+always @(posedge clk_sys) lines_s <= lines;   // a debug value: a torn sample does no harm
+assign dbg = { valid, sdr_ready, 3'd0, lines_s };
 wire lb_we;
 wire [10:0] lb_addr;
 wire [15:0] lb_data;
@@ -187,7 +197,7 @@ msx2_fb_sdram u_sdram(
 	.cb_addr(cb_raddr), .cb_data(cb_rdata),
 	.rd_req(rd_req), .rd_row(rd_row), .rd_buf(rd_buf),
 	.lb_we(lb_we), .lb_addr(lb_addr), .lb_data(lb_data),
-	.ready(),
+	.ready(sdr_ready),
 	.sdr_a(sdr_a), .sdr_ba(sdr_ba), .sdr_dq(sdr_dq), .sdr_dqm(sdr_dqm),
 	.sdr_ras_n(sdr_ras_n), .sdr_cas_n(sdr_cas_n), .sdr_we_n(sdr_we_n)
 );

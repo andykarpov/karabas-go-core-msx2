@@ -33,8 +33,13 @@ wire pal_src = frame_no >= 5'd4;
 wire [9:0] lines = pal_src ? 10'd313 : 10'd262;
 wire hs_n = !((gh < 11'd100) || (gl < 10'd9 && gh >= 11'd684 && gh < 11'd734));
 wire vs_n = !(gl >= 10'd3 && gl < 10'd6);
-wire dhclk = gh[0];
-wire [9:0] sdot = gh[10:1];
+// +ph1: dhclk one clock later, a dot in the clock of the line start (the capture does not count it:
+// 683 dots a line then, the window shows the source dots one later)
+reg ph = 1'b0;
+initial ph = $test$plusargs("ph1");
+wire [11:0] ghp = gh + ph;
+wire dhclk = ghp[0];
+wire [9:0] sdot = ghp[10:1];
 function [17:0] pat(input [9:0] d, input [9:0] l);
 	pat = { d[5:0] ^ l[5:0], d[6:1] + l[5:0], l[5:0] ^ { d[2:0], d[5:3] } };
 endfunction
@@ -102,8 +107,8 @@ end
 function [23:0] expect(input integer x, input integer y, input pal);
 	reg [17:0] q;
 	begin
-		q = pat(H_START + x, VS_LINE + (pal ? V_PAL : V_NTSC) + y / 2);
-		if (x >= 620) expect = 24'd0;
+		q = pat(H_START + ph + x, VS_LINE + (pal ? V_PAL : V_NTSC) + y / 2);
+		if (x >= 620 - ph) expect = 24'd0;
 		else expect = { q[17:13], q[17:15], q[11:6], q[11:10], q[5:1], q[5:3] };
 	end
 endfunction
