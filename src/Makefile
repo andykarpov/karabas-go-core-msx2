@@ -1,12 +1,12 @@
 # Command line build of the MSX1 core for the three boards (ISE 14.7), as the converted cores
 # (nes, tsconf) have it.
 #
-#   make                 all the boards (msx.kg)
+#   make                 all the boards (msx2.kg)
 #   make go|mini|minig   one board: synthesis, implementation, bitstream, .kg file
 #   make minig-xst       one step: <board>-xst (.ngc), <board>-impl (.bin), <board>-core (.kg)
 #   make minig-report    LUTs, slices, block RAMs and the timing result of the last build
-#   make msx1-xst        the machine alone (msx1.prj, -iobuf NO): the fit check of docs/PLAN.md Ф0
-#   make msx1-report     its utilization from the .syr
+#   make msx2-xst        the machine alone (msx2.prj, -iobuf NO): the fit check of docs/PLAN.md Ф0
+#   make msx2-report     its utilization from the .syr
 #   make clean           the intermediate files (not the .bin / .kg files, they are in git)
 #
 # Inputs per board: karabas_<board>.prj (the source list, the shared modules as
@@ -25,7 +25,7 @@ SHELL = /bin/bash
 XIL = source $(ISE_SETTINGS) > /dev/null;
 
 # all boards in one file: a board build puts its bitstream in (make_core --boards)
-KG = msx.kg
+KG = msx2.kg
 JSON = core.json
 
 # map / par options (cost table 2 by default, the rule of all the cores)
@@ -38,7 +38,7 @@ PAR = -ol high -xe c -mt 4
 # included or read by the sources, not in the prj
 INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh) rtl/msx/rom/vy0010.hex
 
-.PHONY: all clean $(BOARDS) $(BOARDS:=-xst) $(BOARDS:=-impl) $(BOARDS:=-core) $(BOARDS:=-report) msx1-xst msx1-report
+.PHONY: all clean $(BOARDS) $(BOARDS:=-xst) $(BOARDS:=-impl) $(BOARDS:=-core) $(BOARDS:=-report) msx2-xst msx2-report
 
 all: $(BOARDS)
 
@@ -74,13 +74,13 @@ endef
 
 $(foreach b,$(BOARDS),$(eval $(call board,$(b))))
 
-msx1.ngc: msx1.prj msx1.xst $(call prj_src,msx1.prj) $(INCLUDES)
+msx2.ngc: msx2.prj msx2.xst $(call prj_src,msx2.prj) $(INCLUDES)
 	mkdir -p xst/projnav.tmp
-	$(XIL) xst -intstyle ise -ifn msx1.xst -ofn msx1.syr
+	$(XIL) xst -intstyle ise -ifn msx2.xst -ofn msx2.syr
 
-msx1-xst: msx1.ngc
-msx1-report:
-	@sed -n '/Device utilization summary/,/Partition Resource Summary/p' msx1.syr | grep -E "Number of (Slice Registers|Slice LUTs|Block RAM/FIFO|DSP48)"
+msx2-xst: msx2.ngc
+msx2-report:
+	@sed -n '/Device utilization summary/,/Partition Resource Summary/p' msx2.syr | grep -E "Number of (Slice Registers|Slice LUTs|Block RAM/FIFO|DSP48)"
 
 clean:
 	rm -f kg_*.stamp
@@ -88,4 +88,4 @@ clean:
 	rm -f $(foreach b,$(BOARDS),$(addprefix karabas_$(b),.ngc .ngd .ngr .syr .lso .bld .pcf .ncd _map.ncd _map.ngm \
 		_map.map _map.mrp _map.xrpt .par .pad _pad.csv _pad.txt .twr .twx .unroutes .xpi .ptwx .bgn .bit .drc \
 		_bitgen.xwbt _summary.xml _usage.xml _xst.xrpt _ngdbuild.xrpt _par.xrpt _guide.ncd))
-	rm -f msx1.ngc msx1.ngr msx1.syr msx1.lso msx1_xst.xrpt
+	rm -f msx2.ngc msx2.ngr msx2.syr msx2.lso msx2_xst.xrpt
