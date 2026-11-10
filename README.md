@@ -1,6 +1,12 @@
-# MSX1 core for Karabas Go / Mini / Mini G
+# MSX2 core for Karabas Go / Mini / Mini G
 
 [Русская версия](README.ru.md)
+
+**Work in progress.** An MSX2 / MSX2+ core: the MSX1 core
+[karabas-go-core-msx](https://github.com/andykarpov/karabas-go-core-msx) with the ESE-VDP (V9938 /
+V9958) of [OCM-PLD](https://github.com/gnogni/ocm-pld-dev) and a frame buffer in the SDRAM. There is
+no core file yet; the plan is `docs/PLAN.md` (Russian). The text below still describes the MSX1 core
+this one starts from.
 
 An MSX1 computer for the Karabas Go family of boards. It is a port of
 [MSX1_MiSTer](https://github.com/MiSTer-devel/MSX1_MiSTer) by molekula to the Xilinx Spartan-6
@@ -148,3 +154,8 @@ The core is under the GNU GPL v3 (`LICENSE`). Its parts keep their own licenses,
 it: MSX1_MiSTer GPL v2 or later, jt49 and jtopl GPL v3, T80 and vdp18 BSD-style licenses, jt8255 MIT,
 C-BIOS a BSD 2-clause license (`src/roms/LICENSE.cbios`; the C-BIOS ROMs are built into the core
 files). The disk ROM of the VY-0010 (`src/rtl/msx/rom`) comes from MSX1_MiSTer.
+
+The ESE-VDP (`src/rtl/msx/vdp`, Kunihiko Ohnaka, from OCM-PLD of KdL) has a BSD-style license that
+also says it may not be sold or used in a commercial product or activity without written
+permission. That condition is not compatible with the GPL and it holds for the core files that
+contain the VDP: they are for non-commercial use.

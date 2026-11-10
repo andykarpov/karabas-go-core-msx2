@@ -1,11 +1,11 @@
 set -tmpdir "xst/projnav.tmp"
 set -xsthdpdir "xst"
 run
--ifn msx1.prj
--ofn msx1
+-ifn msx2.prj
+-ofn msx2
 -ofmt NGC
 -p xc6slx25-2-ftg256
--top msx1
+-top msx2
 -opt_mode Speed
 -opt_level 2
 -power NO

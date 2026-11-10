@@ -1,23 +1,31 @@
-module msx1
+// karabas: msx1 of MSX1_MiSTer, renamed (the MSX2 machine of karabas-go-core-msx2); the VDP is
+// the ESE-VDP (V9938 / V9958) of OCM-PLD instead of vdp18, its VRAM of 128 KB in the SRAM
+module msx2
 (
 	input         clk,
+	input         clk21,         // karabas: the clock of the VDP, clk / 2 from the same PLL, rising edges together
 	input         ce_10m7,
 	input         reset,
-	input         border,
+	// karabas: the picture of the VDP at 15 kHz (DISPRESO 0), on clk21: R / G / B of 6 bits
+	// widened to 8, the pixel enables of the VDP (dhclk 10.7 MHz, dlclk 5.37 MHz), the blanking
 	output  [7:0] R,
 	output  [7:0] G,
 	output  [7:0] B,
 	output        hsync_n,
 	output        vsync_n,
-	output        hblank,
-	output        vblank,
-	// karabas: for the frame buffer (msx_video): the colour index of the pixel, its enable
-	// (5.37 MHz) and the active area of the VDP
-	output  [3:0] vdp_col,
-	output        vdp_ce_pix,
-	output        vdp_hor_active,
-	output        vdp_vert_active,
-	input         vdp_pal,
+	output        vdp_blank,
+	output        vdp_dhclk,
+	output        vdp_dlclk,
+	output        vdp_interlace,
+	input         vdp_pal,       // karabas: 50 Hz when vdp_pal_auto = 0
+	input         vdp_pal_auto,  // karabas: 50 / 60 Hz from R9 (the BIOS, programs)
+	input         vdp_v9958,     // karabas: the ID of the VDP in S#1: V9958 (MSX2+), else V9938 (MSX2)
+	// karabas: the VRAM port (clk21): the word address (bit 16 = the byte of a write), its write,
+	// the 16-bit word read (both bytes: GRAPHIC 6 / 7 read two at once)
+	output [16:0] vram_addr,
+	output        vram_we_n,
+	output  [7:0] vram_dout,
+	input  [15:0] vram_din,
 	output [15:0] audio,
 	input  [10:0] ps2_key,
 	input   [5:0] joy0,
@@ -196,53 +204,69 @@ wire [7:0] rom_q = mem_dout;
 wire [7:0] fw_rom_q = fw_rom_en ? mem_dout : 8'hFF;
 
 //  -----------------------------------------------------------------------------
-//  -- Video RAM 16k
+//  -- karabas: the ESE-VDP (V9938 / V9958 of OCM-PLD) at the ports 98-9B, on clk21
 //  -----------------------------------------------------------------------------
-wire [13:0] vram_a;
-wire [7:0]  vram_do;
-wire [7:0]  vram_di;
-wire        vram_we;
-spram #(.addr_width(14),.mem_name("VRAM")) vram
-(
-	.clock(clk),
-	.address(vram_a),
-	.wren(vram_we),
-	.data(vram_do),
-	.q(vram_di)
-);
+// The VDP takes a request as a pulse of one clk21 (OCM: req of its bus): the start of an I/O read
+// or write of 98-9B, found on clk21. The Z80 holds the address, the data and RD / WR for many
+// clocks of clk21 (a T-state is 6), so they are sampled there as they are.
+wire       vdp_cs = ~iorq_n & m1_n & (a[7:2] == 6'b100110) & (~rd_n | ~wr_n);
+reg        vdp_cs_q = 1'b0, vdp_cs_d = 1'b0;
+reg        vdp_wrt = 1'b0;
+reg [15:0] vdp_adr = 16'd0;
+reg  [7:0] vdp_dbo = 8'd0;
+always @(posedge clk21) begin
+	vdp_cs_q <= vdp_cs;
+	vdp_cs_d <= vdp_cs_q;
+	vdp_wrt <= ~wr_n;
+	vdp_adr <= a;
+	vdp_dbo <= d_from_cpu;
+end
+wire       vdp_req = vdp_cs_q & ~vdp_cs_d;
+wire       vdp_sel = ~iorq_n & m1_n & (a[7:2] == 6'b100110);
+wire [5:0] vdp_r, vdp_g, vdp_b;
+wire       vdp_oe_n;
 
-//  -----------------------------------------------------------------------------
-//  -- TMS9928A Video Display Processor
-//  -----------------------------------------------------------------------------
-vdp18_core #(.compat_rgb_g(0)) vdp18
+vdp vdp
 (
-	.clk_i(clk),
-	.clk_en_10m7_i(ce_10m7),
-	.reset_n_i(~reset),
-	.csr_n_i(vdp_n | rd_n),
-	.csw_n_i(vdp_n | wr_n),
-	.mode_i(a[0]),
-	.cd_i(d_from_cpu),
-	.cd_o(d_from_vdp),
-	.int_n_o(vdp_int_n),
-	.vram_we_o(vram_we),
-	.vram_a_o(vram_a),
-	.vram_d_o(vram_do),
-	.vram_d_i(vram_di),
-	.border_i(border),
-	.rgb_r_o(R),
-	.rgb_g_o(G),
-	.rgb_b_o(B),
-	.hsync_n_o(hsync_n),
-	.vsync_n_o(vsync_n),
-	.hblank_o(hblank),
-	.vblank_o(vblank),
-	.is_pal_i(vdp_pal),
-	.col_o(vdp_col),                  // karabas: see the ports
-	.clk_en_5m37_o(vdp_ce_pix),
-	.hor_active_o(vdp_hor_active),
-	.vert_active_o(vdp_vert_active)
+	.clk21m(clk21),
+	.reset(reset),
+	.req(vdp_req),
+	.ack(),
+	.wrt(vdp_wrt),
+	.adr(vdp_adr),
+	.dbi(d_from_vdp),
+	.dbo(vdp_dbo),
+	.int_n(vdp_int_n),
+	.pramoe_n(vdp_oe_n),
+	.pramwe_n(vram_we_n),
+	.pramadr(vram_addr),
+	.pramdbi(vram_din),
+	.pramdbo(vram_dout),
+	.vdpspeedmode(1'b0),
+	.ratiomode(3'b000),
+	.centeryjk_r25_n(1'b1),
+	.pvideor(vdp_r),
+	.pvideog(vdp_g),
+	.pvideob(vdp_b),
+	.pvideohs_n(hsync_n),
+	.pvideovs_n(vsync_n),
+	.pvideocs_n(),
+	.pvideodhclk(vdp_dhclk),
+	.pvideodlclk(vdp_dlclk),
+	.blank_o(vdp_blank),
+	.interlacemode(vdp_interlace),
+	.dispreso(1'b0),                 // 15 kHz: the frame buffer takes the lines as the VDP makes them
+	.ntsc_pal_type(vdp_pal_auto),
+	.forced_v_mode(vdp_pal),
+	.legacy_vga(1'b0),
+	.vga_int_field(1'b0),
+	.spmaxspr(1'b0),                 // 8 sprites on a line, as the real VDP
+	.vdp_id(vdp_v9958 ? 5'b00010 : 5'b00000),
+	.offset_y(7'b0010011)            // the default of OCM (swioports)
 );
+assign R = {vdp_r, vdp_r[5:4]};
+assign G = {vdp_g, vdp_g[5:4]};
+assign B = {vdp_b, vdp_b[5:4]};
 
 //  -----------------------------------------------------------------------------
 //  -- IO Decoder
@@ -409,7 +433,7 @@ assign d_to_cpu = ~(CS01_n | SLTSL_n[0]) ? rom_q :
 						opll_rom               ? opll_rom_q : // karabas
 						~(SLTSL_n[2])          ? d_from_slots:
 						~(SLTSL_n[3])          ? d_from_slots:                 
-						~(vdp_n | rd_n)        ? d_from_vdp :
+						(vdp_sel & ~rd_n)      ? d_from_vdp : // karabas: the ports 98-9B of the ESE-VDP
 						~(psg_n | rd_n)        ? d_from_psg :
 						~(ppi_n | rd_n)        ? d_from_8255 : 
 						~(ram_mapper_n | rd_n) ? d_from_ram_mapper : // karabas
