@@ -39,11 +39,19 @@
 module msx_system #(
 	parameter FDD_PHYS = 0,         // the physical floppy drives (Karabas Go)
 	parameter TAPE_SILENT = 1000,   // the CAS player (msx_tape): shorter in the simulation
-	parameter TAPE_SYNC = 1454
+	parameter TAPE_SYNC = 1454,
+	parameter [25:0] RTC_TIME_DELAY = 26'd32000000   // msx2_rtc: the time ~0.75 s after the start
 ) (
 	input wire clk,
 	input wire clk21,          // the VDP: clk / 2, rising edges with those of clk
 	input wire reset,          // the reset switch, the mcu busy
+	input wire rtc_start,      // a pulse: the mcu is done with its start, the clock registers of kg_mcu are set
+	output wire [7:0] rtc_a,   // the clock registers of kg_mcu (rtc_mode 0, eeprom_bank 4): the address, the data a clock later
+	input wire [7:0] rtc_do,
+	output wire [7:0] rtc_di,  // a CMOS nibble the CPU wrote: to the .eep of the core
+	output wire rtc_cs,
+	output wire rtc_wr_n,
+	output wire [15:0] rtc_dbg,
 
 	// the ROM loader of the mcu
 	input wire rom_active,
@@ -183,7 +191,53 @@ always @(posedge clk) begin
 	mapper_reset <= mappers_d != { nextor, opll, ram_mapper, mapper_b, slot_a };
 end
 
-wire msx_reset = reset || rom_active || ioctl_download || mapper_reset || eject;
+// img_sdc (see below): the mounts by slot
+wire [7:0] sdc_img_mounted;
+wire [63:0] sdc_img_size;
+
+// Nextor: the first mount of a hard disk image (none before) resets the machine, so Nextor finds it: at
+// the start of the core the firmware mounts the image after the machine started (Nextor had found no
+// drive, a blank screen); another image later is a disk change, no reset
+reg hd_present = 1'b0;
+reg [3:0] hd_reset = 4'd0;
+always @(posedge clk) begin
+	if (hd_reset != 4'd0) hd_reset <= hd_reset - 4'd1;
+	if (sdc_img_mounted[6]) begin
+		hd_present <= sdc_img_size[31:0] != 32'd0 || sdc_img_size[63:32] != 32'd0;
+		if (!hd_present && nextor && (sdc_img_size != 64'd0)) hd_reset <= 4'd15;
+	end
+end
+
+wire msx_reset = reset || rom_active || ioctl_download || mapper_reset || eject || hd_reset != 4'd0;
+
+wire [3:0] rtc_pb;          // the OCM-BIOS copy of the CMOS: its byte (below)
+wire [7:0] rtc_pbyte;
+
+// the RTC: the CMOS from the .eep of the core and the time of the board at the start, the CMOS
+// the CPU writes back to the .eep
+wire rtc_init_wr, rtc_init_adr0;
+wire [7:0] rtc_init_data;
+wire rtc_s_wr, rtc_s_adr0;
+wire [7:0] rtc_s_dbo;
+msx2_rtc #(.TIME_DELAY(RTC_TIME_DELAY)) u_rtc (
+	.clk(clk),
+	.start(rtc_start),
+	.rtc_a(rtc_a),
+	.rtc_do(rtc_do),
+	.rtc_di(rtc_di),
+	.rtc_cs(rtc_cs),
+	.rtc_wr_n(rtc_wr_n),
+	.wr(rtc_init_wr),
+	.adr0(rtc_init_adr0),
+	.data(rtc_init_data),
+	.busy(),
+	.s_wr(rtc_s_wr),
+	.s_adr0(rtc_s_adr0),
+	.s_dbo(rtc_s_dbo),
+	.pb(rtc_pb),
+	.pbyte(rtc_pbyte),
+	.dbg(rtc_dbg)
+);
 
 // ------------------------------------------------------------------ input
 
@@ -208,8 +262,6 @@ wire sd_rd, sd_wr, sd_ack, sd_buff_wr;
 wire [8:0] sd_buff_addr;
 wire [7:0] sd_buff_dout, sd_buff_din;
 
-wire [7:0] sdc_img_mounted;
-wire [63:0] sdc_img_size;
 // img_sdc (see below), declared here for msx1
 wire fdd_sdc_rd, fdd_sdc_wr, hd_sdc_rd, hd_sdc_wr;
 wire [31:0] fdd_sector, hd_sector;
@@ -239,7 +291,23 @@ wire [7:0] vram_dout;
 wire [15:0] vram_din;
 wire [15:0] msx_audio;
 wire mem_we;
-wire [7:0] mem_din, mem_dout;
+wire [7:0] mem_din, mem_dout, sram_dout;
+assign mem_dout = rtc_patch ? rtc_pbyte : sram_dout;
+
+// the OCM-BIOS sets the CMOS at its start from 21 bytes at 033FC6 of its image (its "RTC CODE" at
+// 033F9C, the string at 033FE0): the reads of the bytes of banks 2 and 3 (033FCD..033FDA) get those of
+// msx2_rtc, the CMOS of the .eep. Only for an image with that string (seen while it is loaded).
+reg [7:0] ocm_rtc_sig = 8'd0;
+wire [7:0] ocm_rtc_chr = file_addr[2:0] == 3'd0 ? "R" : file_addr[2:0] == 3'd1 ? "T" : file_addr[2:0] == 3'd2 ? "C" :
+                         file_addr[2:0] == 3'd3 ? " " : file_addr[2:0] == 3'd4 ? "C" : file_addr[2:0] == 3'd5 ? "O" :
+                         file_addr[2:0] == 3'd6 ? "D" : "E";
+always @(posedge clk)
+	if (ioctl_isBIOS && file_wr && file_addr[24:3] == 22'h033FE0 >> 3)
+		ocm_rtc_sig[file_addr[2:0]] <= file_data == ocm_rtc_chr;
+wire ocm_rtc = !logo_en && &ocm_rtc_sig;
+assign rtc_pb = mem_addr[3:0] - 4'hD;              // 033FCD -> 0
+wire rtc_patch = ocm_rtc && mem_addr >= 22'h033FCD && mem_addr <= 22'h033FDA;
+
 wire cas_motor, cas_audio, cas_write;
 wire tape_in_s;
 kg_sync tape_in_sync (.clk(clk), .d(tape_in), .q(tape_in_s));
@@ -263,6 +331,12 @@ msx2 #(.FDD_PHYS(FDD_PHYS)) msx2 (
 	.vram_we_n(vram_we_n),
 	.vram_dout(vram_dout),
 	.vram_din(vram_din),
+	.rtc_init_wr(rtc_init_wr),
+	.rtc_init_adr0(rtc_init_adr0),
+	.rtc_init_data(rtc_init_data),
+	.rtc_s_wr(rtc_s_wr),
+	.rtc_s_adr0(rtc_s_adr0),
+	.rtc_s_dbo(rtc_s_dbo),
 	.audio(msx_audio),
 	.ps2_key(ps2_key),
 	.joy0(joy_swap ? joy_b : joy_a),
@@ -470,7 +544,7 @@ msx_sram sram (
 	.addr(rom_active ? rom_addr[21:0] : mem_addr),
 	.we(rom_active ? rom_wr && rom_keep : mem_we),
 	.din(rom_active ? rom_data : mem_din),
-	.dout(mem_dout),
+	.dout(sram_dout),
 	.aux_req(aux_req),
 	.aux_we(aux_we),
 	.aux_addr(aux_addr),

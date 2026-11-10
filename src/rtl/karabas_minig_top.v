@@ -221,11 +221,14 @@ wire [23:0] img_q_di;
 // 3 x 0, the lines of a frame } of msx2_fb
 wire [13:0] fb_dbg;
 wire msx_reset_dbg;
+wire [7:0] rtc_a, rtc_do, rtc_di;
+wire rtc_cs, rtc_wr_n;
+wire [15:0] rtc_dbg;
 
 kg_mcu #(
 	.BURST_MAX_MHZ(32),  // Rev.G has MCU_SCK on a global clock pin
 	.CS_FILTER(3),
-	.ENABLE_RTC(0),
+	.ENABLE_RTC(1),      // the clock registers (rtc_mode 0, eeprom_bank 4): msx2_rtc, the time and the CMOS
 	.ENABLE_UART(0),
 	.ENABLE_MATRIX(0),
 	.ENABLE_DEBUG(1),    // the state of the frame buffer and the reset of the machine (AT+KARABAS=debug:1)
@@ -286,10 +289,11 @@ kg_mcu #(
 	// not used by this core
 	.PS2_COMMAND(16'h0000),
 	.PS2_COMMAND_WR(1'b0),
-	.RTC_A(8'h00),
-	.RTC_DI(8'h00),
-	.RTC_CS(1'b0),
-	.RTC_WR_N(1'b1),
+	.RTC_A(rtc_a),
+	.RTC_DI(rtc_di),
+	.RTC_DO(rtc_do),
+	.RTC_CS(rtc_cs),
+	.RTC_WR_N(rtc_wr_n),
 	.UART_TX_DATA(8'h00),
 	.UART_TX_WR(1'b0),
 	.UART_TX_MODE(1'b0),
@@ -300,7 +304,7 @@ kg_mcu #(
 	.MATRIX_CMD(24'h000000),
 	.MATRIX_CMD_WR(1'b0),
 	.DEBUG_ADDR({ 1'b0, msx_reset_dbg, fb_dbg }),
-	.DEBUG_DATA(16'h0000),
+	.DEBUG_DATA(rtc_dbg),
 	.IMG_MOUNTED(img_mounted),
 	.IMG_SIZE(img_size),
 	.IMG_DATA_WR(img_data_wr),
@@ -363,9 +367,20 @@ wire [7:0] vdp_r, vdp_g, vdp_b;
 wire vdp_hs_n, vdp_vs_n, vdp_dhclk;
 wire [15:0] msx_audio;
 
+// the start of the machine after the mcu (its busy falls): the clock registers of kg_mcu are set then
+reg mcu_busy_d = 1'b1;
+always @(posedge clk_sys) mcu_busy_d <= mcu_busy;
+
 msx_system msx (
 	.clk(clk_sys),
 	.clk21(clk21),
+	.rtc_start(mcu_busy_d && !mcu_busy),
+	.rtc_a(rtc_a),
+	.rtc_do(rtc_do),
+	.rtc_di(rtc_di),
+	.rtc_cs(rtc_cs),
+	.rtc_wr_n(rtc_wr_n),
+	.rtc_dbg(rtc_dbg),
 	.reset(areset || sw_reset || mcu_busy),
 	.rom_active(rom_active),
 	.rom_addr(rom_addr),
