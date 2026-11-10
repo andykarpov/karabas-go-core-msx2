@@ -10,7 +10,11 @@ module tb_sys (
 	input wire rtc_start,
 	output wire [7:0] rtc_a,
 	input wire [7:0] rtc_do,
+	output wire [7:0] rtc_di,
+	output wire rtc_cs,
+	output wire rtc_wr_n,
 	output wire [47:0] dbg_rtc,
+	output reg [103:0] dbg_cmos,
 	input wire reset,
 	input wire rom_active,
 	input wire [31:0] rom_addr,
@@ -83,8 +87,9 @@ wire [1:0] MWR_N;
 wire [7:0] vdp_r, vdp_g, vdp_b;
 wire vdp_hs_n, vdp_vs_n, vdp_blank;
 
-msx_system #(.TAPE_SILENT(100), .TAPE_SYNC(32)) sys (
+msx_system #(.TAPE_SILENT(100), .TAPE_SYNC(32), .RTC_TIME_DELAY(26'd200000)) sys (
 	.clk(clk), .clk21(clk21), .reset(reset), .rtc_start(rtc_start), .rtc_a(rtc_a), .rtc_do(rtc_do),
+	.rtc_di(rtc_di), .rtc_cs(rtc_cs), .rtc_wr_n(rtc_wr_n),
 	.rom_active(rom_active), .rom_addr(rom_addr), .rom_data(rom_data), .rom_wr(rom_wr),
 	.file_reset(file_reset), .file_active(file_active), .file_slot(file_slot), .file_addr(file_addr), .file_data(file_data),
 	.file_wr(file_wr),
@@ -107,6 +112,10 @@ assign de = ~vdp_blank;
 
 assign cpu_a = sys.msx2.a;
 // the RP5C01: { 0, 1224, leap, year, month, day, week, hour, minute, second } (BCD)
+// the CMOS in the RP5C01 (banks 2, 3: its RAM at 20..2C, 30..3C), register 0 of bank 2 first
+integer ci;
+always @* for (ci = 0; ci < 26; ci = ci + 1)
+	dbg_cmos[103 - 4 * ci -: 4] = sys.msx2.rtc.u_mem.blkram[ci < 13 ? 8'h20 + ci : 8'h23 + ci][3:0];
 assign dbg_rtc = { 3'd0, sys.msx2.rtc.reg_1224, sys.msx2.rtc.reg_leap, sys.msx2.rtc.reg_yea, sys.msx2.rtc.reg_mon,
 	sys.msx2.rtc.reg_day, sys.msx2.rtc.reg_wee, sys.msx2.rtc.reg_hou, sys.msx2.rtc.reg_min, sys.msx2.rtc.reg_sec };
 assign cpu_m1_n = sys.msx2.m1_n;

@@ -39,14 +39,18 @@
 module msx_system #(
 	parameter FDD_PHYS = 0,         // the physical floppy drives (Karabas Go)
 	parameter TAPE_SILENT = 1000,   // the CAS player (msx_tape): shorter in the simulation
-	parameter TAPE_SYNC = 1454
+	parameter TAPE_SYNC = 1454,
+	parameter [25:0] RTC_TIME_DELAY = 26'd32000000   // msx2_rtc: the time ~0.75 s after the start
 ) (
 	input wire clk,
 	input wire clk21,          // the VDP: clk / 2, rising edges with those of clk
 	input wire reset,          // the reset switch, the mcu busy
 	input wire rtc_start,      // a pulse: the mcu is done with its start, the clock registers of kg_mcu are set
-	output wire [7:0] rtc_a,   // the clock registers of kg_mcu (rtc_mode 3): the address, the data a clock later
+	output wire [7:0] rtc_a,   // the clock registers of kg_mcu (rtc_mode 0, eeprom_bank 4): the address, the data a clock later
 	input wire [7:0] rtc_do,
+	output wire [7:0] rtc_di,  // a CMOS nibble the CPU wrote: to the .eep of the core
+	output wire rtc_cs,
+	output wire rtc_wr_n,
 
 	// the ROM loader of the mcu
 	input wire rom_active,
@@ -205,18 +209,27 @@ end
 
 wire msx_reset = reset || rom_active || ioctl_download || mapper_reset || eject || hd_reset != 4'd0;
 
-// the RTC: the time of the board at the start
+// the RTC: the CMOS from the .eep of the core and the time of the board at the start, the CMOS
+// the CPU writes back to the .eep
 wire rtc_init_wr, rtc_init_adr0;
 wire [7:0] rtc_init_data;
-msx2_rtc_init rtc_init (
+wire rtc_s_wr, rtc_s_adr0;
+wire [7:0] rtc_s_dbo;
+msx2_rtc #(.TIME_DELAY(RTC_TIME_DELAY)) u_rtc (
 	.clk(clk),
 	.start(rtc_start),
 	.rtc_a(rtc_a),
 	.rtc_do(rtc_do),
+	.rtc_di(rtc_di),
+	.rtc_cs(rtc_cs),
+	.rtc_wr_n(rtc_wr_n),
 	.wr(rtc_init_wr),
 	.adr0(rtc_init_adr0),
 	.data(rtc_init_data),
-	.busy()
+	.busy(),
+	.s_wr(rtc_s_wr),
+	.s_adr0(rtc_s_adr0),
+	.s_dbo(rtc_s_dbo)
 );
 
 // ------------------------------------------------------------------ input
@@ -298,6 +311,9 @@ msx2 #(.FDD_PHYS(FDD_PHYS)) msx2 (
 	.rtc_init_wr(rtc_init_wr),
 	.rtc_init_adr0(rtc_init_adr0),
 	.rtc_init_data(rtc_init_data),
+	.rtc_s_wr(rtc_s_wr),
+	.rtc_s_adr0(rtc_s_adr0),
+	.rtc_s_dbo(rtc_s_dbo),
 	.audio(msx_audio),
 	.ps2_key(ps2_key),
 	.joy0(joy_swap ? joy_b : joy_a),

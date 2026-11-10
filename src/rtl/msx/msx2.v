@@ -27,10 +27,14 @@ module msx2 #(parameter FDD_PHYS = 0)
 	output        vram_we_n,
 	output  [7:0] vram_dout,
 	input  [15:0] vram_din,
-	// karabas: writes to the RTC from msx2_rtc_init (the time of the board at the start), one clock each
+	// karabas: writes to the RTC from msx2_rtc (the CMOS and the time of the board at the start), one clock each
 	input         rtc_init_wr,
 	input         rtc_init_adr0,
 	input   [7:0] rtc_init_data,
+	// karabas: the writes rtc.v takes (msx2_rtc watches them: the CMOS to the mcu)
+	output        rtc_s_wr,
+	output        rtc_s_adr0,
+	output  [7:0] rtc_s_dbo,
 	output [15:0] audio,
 	input  [10:0] ps2_key,
 	input   [5:0] joy0,
@@ -242,17 +246,22 @@ reg        rtc_cs_d = 1'b0;
 always @(posedge clk) rtc_cs_d <= rtc_cs;
 wire       rtc_sel = ~iorq_n & m1_n & (a[7:1] == 7'b1011010);
 wire [7:0] d_from_rtc;
+wire       rtc_req = (rtc_cs & ~rtc_cs_d) | rtc_init_wr;
+wire       rtc_wrt = rtc_init_wr | ~wr_n;
+assign rtc_s_wr   = rtc_req & rtc_wrt;
+assign rtc_s_adr0 = rtc_init_wr ? rtc_init_adr0 : a[0];
+assign rtc_s_dbo  = rtc_init_wr ? rtc_init_data : d_from_cpu;
 rtc rtc
 (
 	.clk21m(clk),
 	.reset(reset),
 	.clkena(clk_en_3m58_p),
-	.req((rtc_cs & ~rtc_cs_d) | rtc_init_wr),
+	.req(rtc_req),
 	.ack(),
-	.wrt(rtc_init_wr | ~wr_n),
+	.wrt(rtc_wrt),
 	.adr(rtc_init_wr ? { 15'd0, rtc_init_adr0 } : a),
 	.dbi(d_from_rtc),
-	.dbo(rtc_init_wr ? rtc_init_data : d_from_cpu)
+	.dbo(rtc_s_dbo)
 );
 
 //  -----------------------------------------------------------------------------

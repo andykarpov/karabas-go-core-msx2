@@ -1,12 +1,12 @@
 {
     "id": "msx2",
     "name": "MSX2",
-    "build": "26111004",
+    "build": "26111005",
     "visible": true,
     "type": "osd",
     "order": 19,
-    "eeprom_bank": 255,
-    "rtc_mode": 3,
+    "eeprom_bank": 4,
+    "rtc_mode": 0,
     "drives": ["A", "B"],
     "roms": [
     {"filename": "roms/cbios_main_msx2+_eu.rom", "address": 131072},

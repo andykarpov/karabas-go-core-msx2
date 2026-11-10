@@ -5,9 +5,11 @@
 //           [--disk FILE.dsk [--fdd-latency MS] [--fdd-drop N] [--save-disk OUT]]
 //           [--nextor [--nextor-rom FILE]] [--hdd FILE [--save-hdd OUT]] [--no-slot1-rom]
 //
-// --rtc YYMMDDWHHMMSS: the clock registers of kg_mcu (rtc_mode 3: 13 BCD digits) as the firmware has
-// them, the start pulse of msx2_rtc_init when the machine leaves its reset; the RP5C01 is printed at
-// the end ("rtc 20YY-MM-DD w W HH:MM:SS", the year of the chip + 1980).
+// --rtc YYMMDDWHHMMSS: the clock registers of kg_mcu (rtc_mode 0, MC146818A: BCD, register B 02;
+// --rtc-bin: binary, B 06; W 0..6 = MC146818 1..7) as the firmware has them, the start pulse of
+// msx2_rtc when the machine leaves its reset; the RP5C01 is printed at the end ("rtc 20YY-MM-DD w W
+// HH:MM:SS", the year of the chip + 1980). --cmos HEX: 26 nibbles for 40..4C, 50..5C (the .eep);
+// the CMOS writes of the core are printed ("cmos AA DD") and the CMOS at the end ("cmos HEX").
 // --cbios DIR: C-BIOS MSX2+ EU from DIR (src/roms) at the places of msx2_slots, as core.json has it:
 // main 020000, sub 030000, MSX-MUSIC 02C000, logo 03C000. --fast-logo: instead of the logo ROM
 // a stub of 17 bytes at 03C000: the ident C-BIOS looks for ("C-BIOS Logo ROM" at 8000) and a RET at
@@ -210,6 +212,7 @@ static void mcu_clk() {
 }
 
 static uint8_t rtc_mem[256];
+static bool rtc_trace = true;
 static void tick() {
 	ticks++;
 	bool step = false;
@@ -224,6 +227,10 @@ static void tick() {
 	if (clk_rise && (!disk.empty() || !hdd.empty())) mcu_clk();
 	// kg_mcu_rtc: a RAM read on the clock: rtc_do after an edge is the register of rtc_a before it
 	if (clk_rise) top->rtc_do = rtc_mem[rtc_a_before];
+	if (clk_rise && top->rtc_cs && !top->rtc_wr_n) {
+		rtc_mem[top->rtc_a] = top->rtc_di;
+		if (rtc_trace) printf("cmos %02x %x (frame %d)\n", top->rtc_a, top->rtc_di, frames);
+	}
 	if (dbg && top->dbg_border != dbg_b) { printf("frame %d y %d border %d\n", frames, top->dbg_y, top->dbg_border); dbg_b = top->dbg_border; }
 	{ bool isr = !top->cpu_m1_n && top->cpu_a == 0x38; if (isr && !prev_isr) isr_cnt++; prev_isr = isr; }
 	// SIM_TRACE=N: the first N opcode fetches (address, the byte at the end of the read)
@@ -326,7 +333,7 @@ int main(int argc, char **argv) {
 	std::string cart_a, cart_b, bios, ppm;
 	int nframes = 60, every = 0, mapper_a = 0;
 	bool pal = false, v9938 = false, fast_logo = false, bios_first = false, hash = false;
-	std::string rtc_s; uint8_t rtc_regs[256] = {0}; bool rtc_on = false, fdd = false, ram64 = false, no_opll = false;
+	std::string rtc_s, cmos_s; bool rtc_bin = false; bool rtc_on = false, fdd = false, ram64 = false, no_opll = false;
 	int audio_min = -1, audio_max = -1;
 	std::string save_disk, cas, save_hdd, nextor_rom;
 	bool nextor = false, no_slot1_rom = false;
@@ -350,6 +357,8 @@ int main(int argc, char **argv) {
 		else if (a == "--v9938") v9938 = true;
 		else if (a == "--fast-logo") fast_logo = true;
 		else if (a == "--bios-first") bios_first = true;
+		else if (a == "--rtc-bin") rtc_bin = true;
+		else if (a == "--cmos") { cmos_s = next(); if (cmos_s.size() != 26) { fprintf(stderr, "--cmos: 26 hex digits\n"); return 1; } }
 		else if (a == "--rtc") { rtc_s = next(); rtc_on = rtc_s.size() == 13; if (!rtc_on) { fprintf(stderr, "--rtc YYMMDDWHHMMSS\n"); return 1; } }
 		else if (a == "--ram64") ram64 = true;
 		else if (a == "--no-opll") no_opll = true;
@@ -440,10 +449,12 @@ int main(int argc, char **argv) {
 	}
 	if (rtc_on) {
 		auto d = [&](int i) { return (uint8_t)(rtc_s[i] - '0'); };
-		// S1 S10 MI1 MI10 H1 H10 D1 D10 MO1 MO10 Y1 Y10 W
-		uint8_t v[13] = { d(12), d(11), d(10), d(9), d(8), d(7), d(5), d(4), d(3), d(2), d(1), d(0), d(6) };
-		memcpy(rtc_regs, v, 13);
-		memcpy(rtc_mem, rtc_regs, 256);
+		auto v = [&](int i) { int x = d(i) * 10 + d(i + 1); return (uint8_t)(rtc_bin ? x : (d(i) << 4) | d(i + 1)); };
+		// YYMMDDWHHMMSS: 0 sec, 2 min, 4 hour, 6 week (1..7), 7 day, 8 month, 9 year, B the mode
+		rtc_mem[0] = v(11); rtc_mem[2] = v(9); rtc_mem[4] = v(7); rtc_mem[6] = d(6) + 1;
+		rtc_mem[7] = v(4); rtc_mem[8] = v(2); rtc_mem[9] = v(0); rtc_mem[0x0B] = rtc_bin ? 0x06 : 0x02;
+		for (int i = 0; i < 26 && !cmos_s.empty(); i++)
+			rtc_mem[(i < 13 ? 0x40 : 0x43) + i] = (uint8_t)std::stoi(cmos_s.substr(i, 1), nullptr, 16);
 	}
 	top->reset = 0;
 	if (rtc_on) {
@@ -482,6 +493,11 @@ int main(int argc, char **argv) {
 		    mon = (r >> 29) & 0x1F, yea = (r >> 34) & 0xFF, leap = (r >> 42) & 3, h24 = (r >> 44) & 1;
 		int y = ((yea >> 4) * 10 + (yea & 15)) + 1980;
 		printf("rtc %04d-%02x-%02x w %d %02x:%02x:%02x leap %d 24h %d\n", y, mon, day, wee, hou, min, sec, leap, h24);
+		printf("cmos ");
+		for (int i = 0; i < 26; i++) printf("%x", rtc_mem[(i < 13 ? 0x40 : 0x43) + i] & 15);
+		printf(" (kg_mcu), ");
+		for (int i = 0; i < 26; i++) printf("%x", (int)((top->dbg_cmos[(103 - 4 * i) / 32] >> ((103 - 4 * i - 3) % 32)) & 15));
+		printf(" (RP5C01)\n");
 	}
 	{
 		int r = amax - amin;

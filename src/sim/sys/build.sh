@@ -10,7 +10,7 @@ B=$S/sim/build
 R=$S/rtl
 M=$S/../modules/rtl
 SRC="$H/tb_sys.v $R/msx_system.v $R/msx_sram.v $R/msx_ps2_key.v $R/msx_fdd_cache.v $R/msx_tape.v $R/msx/tape.v $M/mcu/img_sdc.v
- $R/msx/msx2.v $R/msx/msx2_slots.v $R/msx/rtc.v $R/msx/msx2_rtc_init.v $R/msx/spram.v $R/msx/ls74.v $R/msx/jt8255.v $R/msx/io_decoder.v $R/msx/memory_mapper.v $R/msx/ram_mapper.v $R/msx/nextor_sd.v $M/mem/kg_tdpram.v $R/msx/slots.v
+ $R/msx/msx2.v $R/msx/msx2_slots.v $R/msx/rtc.v $R/msx/msx2_rtc.v $R/msx/spram.v $R/msx/ls74.v $R/msx/jt8255.v $R/msx/io_decoder.v $R/msx/memory_mapper.v $R/msx/ram_mapper.v $R/msx/nextor_sd.v $M/mem/kg_tdpram.v $R/msx/slots.v
  $R/msx/cart/rom.v $R/msx/cart/rom_detect.v $R/msx/cart/konami.v $R/msx/cart/konami_scc.v $R/msx/cart/ascii8.v
  $R/msx/cart/ascii16.v $R/msx/cart/gamemaster2.v $R/msx/cart/vy0010.v $R/msx/cart/wd1793.v
  $R/msx/jt49/jt49_bus.v $R/msx/jt49/jt49.v $R/msx/jt49/jt49_cen.v $R/msx/jt49/jt49_div.v $R/msx/jt49/jt49_eg.v
