@@ -42,6 +42,12 @@ XC6SLX25 плат Karabas. Вся работа с файлами (картрид
 - **Дисковод:** интерфейс Philips VY-0010 (контроллер WD1793 и его Disk ROM) в слоте 1 вместо
   картриджа A, образы `.dsk` на 360 или 720 КБ. После монтирования образ в фоне копируется в SRAM
   платы, поэтому дисковод работает со скоростью настоящего; запись идёт в SRAM и сразу в файл образа.
+  Файл образа только для чтения (или пункт F с `readonly`) — диск, защищённый от записи.
+- **Физические дисководы (Karabas Go):** Disk A и Disk B могут быть дисководами разъёма платы
+  (`[ Physical A ]` / `[ Physical B ]` в списке файлов, дисководы DS0 / DS1). Ими управляет модель
+  WD1793 (модель VG93 из [FD1793_1818VG93](https://github.com/demyanenko-d/FD1793_1818VG93), как в
+  ядре Profi) прямо на выводах, поэтому Disk ROM читает, пишет и форматирует настоящие диски MSX на
+  720 / 360 КБ. Disk A — образ или физический дисковод, Disk B — только физический.
 - **Nextor на образе жёсткого диска:** интерфейс SD MSX1FPGA в слоте 1 (вместо картриджа A или
   дисковода) с его драйвером Nextor, на файле образа (`.img`, `.hdd`, `.vhd`, `.dsk`) на SD-карте
   платы: ядро отвечает как SD-карта, секторы идут из образа через прошивку. ROM Nextor — файл
@@ -68,7 +74,8 @@ XC6SLX25 плат Karabas. Вся работа с файлами (картрид
    Машина запускает картридж сразу после загрузки.
 
 Для дисков и кассет нужен настоящий BIOS MSX (пункт BIOS): C-BIOS зависает в INIT Disk ROM.
-Диск: Machine > Slot 1 = Disk drive, затем `.dsk` в Disk A. Nextor: Machine > Slot 1 = Nextor, затем
+Диск: Machine > Slot 1 = Disk drive, затем `.dsk` в Disk A (на Go и `[ Physical A ]` / `[ Physical B ]`
+в Disk A / Disk B для дисководов разъёма). Nextor: Machine > Slot 1 = Nextor, затем
 образ в HDD (Nextor тоже нужен настоящий BIOS). Кассета: `.cas` в Tape, затем `RUN"CAS:"`
 (программы на BASIC), `BLOAD"CAS:",R` (машинный код) или `CLOAD` + `RUN`; Tape rewind ставит файл
 на начало.
@@ -82,7 +89,8 @@ XC6SLX25 плат Karabas. Вся работа с файлами (картрид
 | Пункт | Значения | Клавиши |
 |---|---|---|
 | Cart A | картридж в слот 1 (виден при Slot 1 = Cartridge A) | Menu+F1 |
-| Disk A | образ `.dsk` дисковода (виден при Slot 1 = Disk drive) | Menu+F3 |
+| Disk A | образ `.dsk` дисковода, на Go и физический дисковод (виден при Slot 1 = Disk drive) | Menu+F3 |
+| Disk B | только Go: физический дисковод как дисковод B (виден при Slot 1 = Disk drive) | Menu+F6 |
 | HDD | образ жёсткого диска для Nextor (виден при Slot 1 = Nextor) | Menu+F5 |
 | Cart B | картридж в слот 2 | Menu+F2 |
 | Tape | файл `.cas` (серый при Tape input = Tape in) | Menu+F4 |
@@ -142,12 +150,16 @@ Slot 1, RAM или FM сбрасывают машину; загрузка кас
   слоты и мапперы, дисковый интерфейс VY-0010 / WD1793, проигрыватель CAS).
 - T80: Daniel Wallner, MikeJ, Sorgelig и другие. vdp18: Arnim Laeuger. jt49, jt8255 и jt2413 (jtopl): Jose Tejada.
 - [C-BIOS](http://cbios.sourceforge.net/): команда C-BIOS.
+- [FD1793_1818VG93](https://github.com/demyanenko-d/FD1793_1818VG93): модель VG93 / WD1793 для
+  физических дисководов (там благодарность deathsoft и dr.Titus); разделитель данных — по fapch_zek
+  ZEK (ZX-Evolution).
 - Платы Karabas Go и порт: Andy Karpov.
 
 Ядро распространяется под GNU GPL v3 (`LICENSE`). Его части сохраняют свои лицензии, совместимые с
 ней: MSX1_MiSTer — GPL v2 или новее, jt49 и jtopl — GPL v3, T80 и vdp18 — лицензии в стиле BSD, jt8255 — MIT,
 C-BIOS — BSD из двух пунктов (`src/roms/LICENSE.cbios`; ROM C-BIOS встроены в файлы ядра). Disk ROM
-VY-0010 (`src/rtl/msx/rom`) взят из MSX1_MiSTer.
+VY-0010 (`src/rtl/msx/rom`) взят из MSX1_MiSTer. У модели VG93 (`src/rtl/vg93`) в её репозитории
+лицензия не указана.
 
 У ESE-VDP (`src/rtl/msx/vdp`, Kunihiko Ohnaka, из OCM-PLD от KdL) лицензия в стиле BSD с ещё одним
 условием: без письменного разрешения его нельзя продавать и использовать в коммерческих продуктах и

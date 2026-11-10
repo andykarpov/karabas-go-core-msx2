@@ -23,6 +23,11 @@
  cartridge A): the .dsk image of the F item, slot 0 of the file mounter, through img_sdc; a copy of
  it in the SRAM from 300000 (msx_fdd_cache: filled in the background, write-through), so a sector
  is in the FDC in about 100 us instead of the 5-15 ms of the firmware.
+ The physical floppy drives (FDD_PHYS = 1, Karabas Go): the F item of drive A (slot 0) or of drive B
+ (slot 7, physical drives only) set to [ Physical A ] / [ Physical B ] of the firmware (CMD_IMG_PHYS:
+ DS0 / DS1 of the floppy connector); such a drive is on the VG93 model at the pins (vy0010,
+ msx_fdc_phys), the image of drive A on the wd1793 of MiSTer. Write protected images (IMG_WP of the
+ firmware): the wd1793 of drive A and the SD interface of Nextor show them so.
  The mapper of a cartridge: mapper_a / mapper_b, the values of MiSTer (0 auto, 1 none,
  2 Game Master 2, 3 Konami, 4 Konami SCC, 5 ASCII 8, 6 ASCII 16, 7 linear 64K, 8 R-Type; the OSD offers 0-7, eight options at most); a change
  resets the machine.
@@ -32,6 +37,7 @@
 */
 
 module msx_system #(
+	parameter FDD_PHYS = 0,         // the physical floppy drives (Karabas Go)
 	parameter TAPE_SILENT = 1000,   // the CAS player (msx_tape): shorter in the simulation
 	parameter TAPE_SYNC = 1454
 ) (
@@ -84,6 +90,11 @@ module msx_system #(
 	output wire img_q_wr,
 	output wire [23:0] img_q_di,
 	input wire img_q_ack,
+	input wire img_phys_wr,    // IMG_PHYS of kg_mcu: { slot, drive } (drive 1 DS0, 2 DS1), one clock
+	input wire [15:0] img_phys,
+	input wire [7:0] img_wp,   // IMG_WP of kg_mcu: the image of slot n is write protected
+	input wire [3:0] fdd_in,   // the floppy connector (FDD_PHYS), high = active: { rdata, wprt, tr00, index }
+	output wire [7:0] fdd_out, // { wdata, wgate, side1, step, dir, motor, ds1, ds0 }
 	output wire fdd_active,    // a sector is being transferred (a LED)
 	output wire fdd_filling,   // the copy of the image in the SRAM is not complete yet
 	output wire [10:0] fdd_filled,
@@ -203,6 +214,20 @@ wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, fdd_byte_out_data, hd_byte_out_data;
 
+// the physical drives: drive A (F slot 0) / B (F slot 7) on DS0 (1) / DS1 (2) or not (0). The size
+// frames of a slot (an image, an eject) end it; CMD_IMG_PHYS comes after them.
+reg [1:0] phys_a = 2'd0, phys_b = 2'd0;
+always @(posedge clk) begin
+	if (img_mounted[0])
+		phys_a <= 2'd0;
+	if (img_mounted[7])
+		phys_b <= 2'd0;
+	if (img_phys_wr && img_phys[15:8] == 8'd0)
+		phys_a <= img_phys[1:0];
+	if (img_phys_wr && img_phys[15:8] == 8'd7)
+		phys_b <= img_phys[1:0];
+end
+
 wire [21:0] mem_addr;
 wire [16:0] vram_addr;
 wire vram_we_n;
@@ -216,7 +241,7 @@ wire tape_in_s;
 kg_sync tape_in_sync (.clk(clk), .d(tape_in), .q(tape_in_s));
 assign tape_out = cas_write;
 
-msx2 msx2 (
+msx2 #(.FDD_PHYS(FDD_PHYS)) msx2 (
 	.clk(clk),
 	.clk21(clk21),
 	.ce_10m7(ce_10m7),
@@ -268,6 +293,7 @@ msx2 msx2 (
 	.ioctl_isNEXTOR(ioctl_isNEXTOR),
 	.hd_mounted(sdc_img_mounted[6]),
 	.hd_size(|sdc_img_size[63:32] ? 32'hFFFFFE00 : sdc_img_size[31:0]),
+	.hd_wp(img_wp[6]),
 	.hd_rd(hd_sdc_rd),
 	.hd_wr(hd_sdc_wr),
 	.hd_lba(hd_sector),
@@ -277,11 +303,11 @@ msx2 msx2 (
 	.hd_byte_addr(sdc_byte_addr),
 	.hd_byte_in_data(sdc_byte_in_data),
 	.hd_byte_out_data(hd_byte_out_data),
-	// the disk drive: img_sdc and the copy of the image in the SRAM (msx_fdd_cache; the firmware opens the image read-write
-	// when it can and gives no write protect)
+	// the disk drive: img_sdc and the copy of the image in the SRAM (msx_fdd_cache); a write protected
+	// image (the readonly item or a read only file: IMG_WP) is so for the wd1793, which then does not write
 	.img_mounted(sdc_img_mounted[0]),
 	.img_size(sdc_img_size[31:0]),
-	.img_wp(1'b0),
+	.img_wp(img_wp[0]),
 	.sd_lba(sd_lba),
 	.sd_rd(sd_rd),
 	.sd_wr(sd_wr),
@@ -290,7 +316,11 @@ msx2 msx2 (
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din),
 	.sd_buff_wr(sd_buff_wr),
-	.sd_din_strobe(1'b0)
+	.sd_din_strobe(1'b0),
+	.fdd_phys_a(phys_a),
+	.fdd_phys_b(phys_b),
+	.fdd_in(fdd_in),
+	.fdd_out(fdd_out)
 );
 
 // ------------------------------------------------------------------ the disk drive

@@ -36,6 +36,7 @@ module nextor_sd (
 	// the image (img_sdc)
 	input wire img_mounted,       // a pulse: img_size is the new size (0 = none)
 	input wire [31:0] img_size,
+	input wire img_wp,            // the image is write protected (the firmware does not write it)
 	output reg hd_rd = 1'b0,
 	output reg hd_wr = 1'b0,
 	output reg [31:0] hd_lba = 32'd0,
@@ -63,7 +64,7 @@ assign mem_we = ram_area & ~wr_n;
 reg [7:0] rx = 8'hFF;         // the byte of the last exchange
 reg changed = 1'b0;
 reg mounted = 1'b0;
-wire [7:0] status = { 5'd0, 1'b0, ~mounted, changed };
+wire [7:0] status = { 5'd0, img_wp & mounted, ~mounted, changed };
 
 assign sel = page1 & ~rd_n;
 assign dout = spi_area ? rx : ctl_area ? status : rom_en ? mem_dout : 8'hFF;

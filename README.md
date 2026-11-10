@@ -43,7 +43,14 @@ with test cartridges, not yet with a real MSX BIOS). The Mini and Go builds are 
 - **Disk drive:** the Philips VY-0010 interface (WD1793 FDC and its disk ROM) in slot 1 instead of
   cartridge A, with `.dsk` images of 360 or 720 KB. The image is read into the SRAM of the board in
   the background after it is mounted, so the drive works at the speed of a real one; writes go to
-  the SRAM and to the image file at once.
+  the SRAM and to the image file at once. A read only image file (or a read only F item) is a
+  write protected disk.
+- **Physical floppy drives (Karabas Go):** Disk A and Disk B can be the drives of the floppy
+  connector (`[ Physical A ]` / `[ Physical B ]` in the file browser, the drives DS0 / DS1). They
+  are driven by a model of the WD1793 (the VG93 model of
+  [FD1793_1818VG93](https://github.com/demyanenko-d/FD1793_1818VG93), as in the Profi core) at the
+  pins, so the disk ROM reads, writes and formats real 720 KB / 360 KB MSX disks. Disk A can be an
+  image or a physical drive, Disk B only a physical drive.
 - **Nextor on a hard disk image:** the SD interface of MSX1FPGA in slot 1 (instead of cartridge A
   or the drive) with its Nextor driver, on an image file (`.img`, `.hdd`, `.vhd`, `.dsk`) of the SD
   card of the board: the core answers as an SD card, the sectors come from the image through the
@@ -71,7 +78,8 @@ battery cartridges.
    (Menu+F1). The machine starts the cartridge when it is loaded.
 
 Disks and tapes need a real MSX BIOS (OSD item BIOS): C-BIOS hangs in the INIT of the disk ROM.
-For a disk: Machine > Slot 1 = Disk drive, then a `.dsk` in Disk A. For Nextor: Machine > Slot 1 =
+For a disk: Machine > Slot 1 = Disk drive, then a `.dsk` in Disk A (on the Go also `[ Physical A ]`
+or `[ Physical B ]` in Disk A / Disk B for the drives of the floppy connector). For Nextor: Machine > Slot 1 =
 Nextor, then the image in HDD (Nextor needs a real BIOS too). For a tape: a `.cas` in Tape, then
 `RUN"CAS:"` (BASIC programs), `BLOAD"CAS:",R` (machine code) or `CLOAD` + `RUN`; Tape rewind starts
 the file again.
@@ -85,7 +93,8 @@ one shows all items in one list.
 | Item | Values | Hotkey |
 |---|---|---|
 | Cart A | a cartridge for slot 1 (shown when Slot 1 = Cartridge A) | Menu+F1 |
-| Disk A | the `.dsk` image of the drive (shown when Slot 1 = Disk drive) | Menu+F3 |
+| Disk A | the `.dsk` image of the drive, on the Go also a physical drive (shown when Slot 1 = Disk drive) | Menu+F3 |
+| Disk B | Go only: a physical drive as drive B (shown when Slot 1 = Disk drive) | Menu+F6 |
 | HDD | the hard disk image of Nextor (shown when Slot 1 = Nextor) | Menu+F5 |
 | Cart B | a cartridge for slot 2 | Menu+F2 |
 | Tape | a `.cas` file (grey when Tape input = Tape in) | Menu+F4 |
@@ -148,12 +157,16 @@ The board firmware is [karabas-go-firmware](https://github.com/andykarpov/karaba
 - T80: Daniel Wallner, MikeJ, Sorgelig and others. vdp18: Arnim Laeuger. jt49, jt8255 and jt2413 (jtopl): Jose
   Tejada.
 - [C-BIOS](http://cbios.sourceforge.net/): the C-BIOS team.
+- [FD1793_1818VG93](https://github.com/demyanenko-d/FD1793_1818VG93): the VG93 / WD1793 model of
+  the physical floppy drives (thanks there to deathsoft and dr.Titus); the data separator after
+  fapch_zek by ZEK (ZX-Evolution).
 - Karabas Go boards and the port: Andy Karpov.
 
 The core is under the GNU GPL v3 (`LICENSE`). Its parts keep their own licenses, all compatible with
 it: MSX1_MiSTer GPL v2 or later, jt49 and jtopl GPL v3, T80 and vdp18 BSD-style licenses, jt8255 MIT,
 C-BIOS a BSD 2-clause license (`src/roms/LICENSE.cbios`; the C-BIOS ROMs are built into the core
-files). The disk ROM of the VY-0010 (`src/rtl/msx/rom`) comes from MSX1_MiSTer.
+files). The disk ROM of the VY-0010 (`src/rtl/msx/rom`) comes from MSX1_MiSTer. The VG93 model
+(`src/rtl/vg93`) states no license in its repository.
 
 The ESE-VDP (`src/rtl/msx/vdp`, Kunihiko Ohnaka, from OCM-PLD of KdL) has a BSD-style license that
 also says it may not be sold or used in a commercial product or activity without written

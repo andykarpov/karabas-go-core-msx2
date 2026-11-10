@@ -36,7 +36,7 @@ MAP = -logic_opt off -ol high -xe n -xt 3 -register_duplication off -r 4 -global
 PAR = -ol high -xe c -mt 4
 
 # included or read by the sources, not in the prj
-INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh) rtl/msx/rom/vy0010.hex
+INCLUDES = $(wildcard ../modules/rtl/mcu/*.vh rtl/vg93/*.vh) rtl/msx/rom/vy0010.hex rtl/vg93/vg93-microcode-rom.hex
 
 .PHONY: all clean $(BOARDS) $(BOARDS:=-xst) $(BOARDS:=-impl) $(BOARDS:=-core) $(BOARDS:=-report) msx2-xst msx2-report
 

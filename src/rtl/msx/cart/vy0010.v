@@ -1,4 +1,5 @@
-module vy0010
+// karabas: PHYS = 1 (Karabas Go): the physical floppy drives on the VG93 model (msx_fdc_phys), see below
+module vy0010 #(parameter PHYS = 0)
 (
    input            clk,
    input            clk_en,
@@ -22,7 +23,14 @@ module vy0010
    input      [7:0] sd_buff_dout,
    output     [7:0] sd_buff_din,
    input            sd_buff_wr,
-   input            sd_din_strobe
+   input            sd_din_strobe,
+   // karabas: the physical drives (PHYS): drive A / B is 0 the image (A) or none (B), 1 DS0, 2 DS1 of the
+   // floppy connector; its pins, high = active: { rdata, wprt, tr00, index }, { wdata, wgate, side1, step,
+   // dir, motor, ds1, ds0 }
+   input      [1:0] phys_a,
+   input      [1:0] phys_b,
+   input      [3:0] fdd_in,
+   output     [7:0] fdd_out
 );
 
 reg side_select, m_on, in_use = 1'b0;
@@ -39,8 +47,8 @@ wire csfdc = ~ic4 && ~addr[2];
 assign d_to_cpu = romce            ? (rom_en ? d_from_rom : 8'hFF)          : 
                   r7ffc   && ~rd_n ? {7'b1111111, ~side_select}             :
                   r7ffd   && ~rd_n ? {m_on, in_use, 4'b1110, ~ds[1], ds[0]} :
-                  r7fff   && ~rd_n ? {~drq, ~intrq, type1, type0, 4'b1111}  : 
-                  csfdc   && ~rd_n ? d_from_wd :
+                  r7fff   && ~rd_n ? {~drq, ~intrq, type1, type0, 4'b1111}  :
+                  csfdc   && ~rd_n ? d_from_fdc :
                                      8'hFF;
 
 wire wr7ffc = r7ffc & ~wr_n;
@@ -76,8 +84,8 @@ always @(posedge clk) begin
    end
 end
    
-wire [7:0] d_from_wd;
-wire drq, intrq;
+wire [7:0] d_from_wd, d_from_fdc;
+wire drq, intrq, wd_drq, wd_intrq;
 reg img_load;
 // karabas: a single sided image (360 KB or less) has no side 1 between the tracks: layout 1 of
 // wd1793 (side-track-sector) puts track t of side 0 at t * 9 sectors there; layout 0
@@ -90,19 +98,39 @@ always @(posedge clk) if(img_mounted) begin
 end
 wire fdd_ready = img_load & ~ds[0] & ds[1];
 
+// karabas: the physical floppy drives (PHYS, Karabas Go). 7FFD bits 1..0 select the drive as in the disk
+// ROM: 00 A (C4: motor on, A), 01 B (C5: the ROM looks for drive B by a restore), 11 none (03). A drive
+// mapped to a physical one (phys_a / phys_b: DS0 / DS1) is served by the VG93 model on the pins, the
+// others by wd1793 (the image of drive A; B without a physical drive has nothing, as before): the
+// accesses to 7FF8..7FFB go to the controller of the selected drive only, so each keeps its own registers
+// (the ROM writes the track register of a drive when it selects it). A Force Interrupt (Dx) goes to both:
+// a command left in the other one ends.
+wire sel_a = ~ds[0] &  ds[1];
+wire sel_b =  ds[0] &  ds[1];
+wire [1:0] map_sel = sel_a ? phys_a : sel_b ? phys_b : 2'd0;
+wire phys_sel = (PHYS != 0) && map_sel != 2'd0;
+wire force_int = ~wr_n && addr[1:0] == 2'b00 && d_from_cpu[7:4] == 4'hD;
+wire wd_sel = ~phys_sel | force_int;
+wire ph_sel = phys_sel | force_int;
+wire [7:0] d_from_ph;
+wire ph_drq, ph_intrq;
+assign d_from_fdc = phys_sel ? d_from_ph : d_from_wd;
+assign drq = phys_sel ? ph_drq : wd_drq;
+assign intrq = phys_sel ? ph_intrq : wd_intrq;
+
 wd1793 #(.RWMODE(1), .EDSK(0)) fdc
 (
    .clk_sys(clk),
    .ce(clk_en),
-   .reset(reset),  
-   .io_en(csfdc),
-   .rd(~rd_n), 
+   .reset(reset),
+   .io_en(csfdc & wd_sel),    // karabas: see phys_sel
+   .rd(~rd_n),
    .wr(~wr_n),
    .addr(addr[1:0]),
    .din(d_from_cpu),
    .dout(d_from_wd),
-   .drq(drq),
-   .intrq(intrq),
+   .drq(wd_drq),
+   .intrq(wd_intrq),
    .ready(fdd_ready),
    .layout(img_ss),           // karabas: see img_ss
    .size_code(3'h2),
@@ -123,7 +151,38 @@ wd1793 #(.RWMODE(1), .EDSK(0)) fdc
    .input_data(8'h0),
    .input_wr(1'b0),
    .buff_din(8'h0)
-); 
+);
+
+generate
+if (PHYS != 0) begin : phys
+   // the register of the access, held after it: the model takes the byte at the end of the write
+   reg [1:0] a_hold = 2'd0;
+   wire acc = csfdc & ph_sel & (~rd_n | ~wr_n);
+   always @(posedge clk) if (acc) a_hold <= addr[1:0];
+   msx_fdc_phys fdc_phys (
+      .clk(clk),
+      .reset(reset),
+      .cs(csfdc & ph_sel),
+      .rd(~rd_n),
+      .wr(~wr_n),
+      .a(acc ? addr[1:0] : a_hold),
+      .din(d_from_cpu),
+      .dout(d_from_ph),
+      .drq(ph_drq),
+      .intrq(ph_intrq),
+      .ds({ map_sel == 2'd2, map_sel == 2'd1 }),
+      .motor(m_on),
+      .side(side_select),
+      .fdd_in(fdd_in),
+      .fdd_out(fdd_out)
+   );
+end else begin : no_phys
+   assign d_from_ph = 8'hFF;
+   assign ph_drq = 1'b0;
+   assign ph_intrq = 1'b0;
+   assign fdd_out = 8'd0;
+end
+endgenerate
 
 wire [7:0] d_from_rom;
 
