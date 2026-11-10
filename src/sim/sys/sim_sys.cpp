@@ -36,17 +36,23 @@ static Vtb_sys *top;
 static uint64_t ticks = 0;
 static uint64_t clks = 0;
 
-// frame capture from the VDP (clk21): a line from the rise of hs, a frame from the rise of vs
+// frame capture from the VDP (clk21): a line from the rise of hs, a frame from the rise of vs. In
+// the vertical sync the VDP (vdp_ntsc_pal) gives hs pulses at twice the line rate (equalizing and
+// serration pulses): a rise of hs starts a line only 1300 clocks of clk21 or more after the line
+// before (a line is 1368)
 static const int FW = 700, FH = 640;
 static std::vector<uint8_t> cap(FW * FH * 3), frame;
 static int fx = 0, fy = 0, frames = 0, fw = 0, fh = 0, cap_w = 0;
 static bool prev_hs = false, prev_vs = false;
+static int since_hs = 0;
 
 static void on_vdp() {
 	bool hs = top->hs, vs = top->vs;
-	if (hs && !prev_hs) { if (fx > cap_w) cap_w = fx; fx = 0; fy++; }
+	since_hs++;
+	if (hs && !prev_hs && since_hs >= 1300) { if (fx > cap_w) cap_w = fx; fx = 0; fy++; since_hs = 0; }
 	if (vs && !prev_vs) {
-		fw = cap_w < FW ? cap_w : FW; fh = fy < FH ? fy : FH;
+		// 1368 clocks of clk21 a line, a pixel in two
+		fw = cap_w < 684 ? cap_w : 684; fh = fy < FH ? fy : FH;
 		frame.assign(fw * fh * 3, 0);
 		for (int y = 0; y < fh; y++) memcpy(&frame[y * fw * 3], &cap[y * FW * 3], fw * 3);
 		std::fill(cap.begin(), cap.end(), 0);
