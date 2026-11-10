@@ -526,7 +526,10 @@ BEGIN
             REG_R7_FRAME_COL        <= (OTHERS => '0');
             REG_R8_SP_OFF           <= '0';
             REG_R8_COL0_ON          <= '0';
-            REG_R9_PAL_MODE         <= FORCED_V_MODE;
+            -- karabas: '0' instead of FORCED_V_MODE: an asynchronous reset to a signal is a latch in XST
+            -- (Xilinx LDC). The BIOS writes R9 at its start; with NTSC_PAL_TYPE = '0' vdp.vhd uses
+            -- FORCED_V_MODE instead of this bit anyway
+            REG_R9_PAL_MODE         <= '0';
             FF_R9_2PAGE_MODE        <= '0';
             REG_R9_INTERLACE_MODE   <= '0';
             REG_R9_Y_DOTS           <= '0';
