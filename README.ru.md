@@ -13,10 +13,10 @@ SDRAM. ПЛИС плат — Xilinx Spartan-6 XC6SLX25. Вся работа с �
 | Плата | Файл ядра | Видео | Звук | Состояние |
 |---|---|---|---|---|
 | Karabas Mini G | `msx2.kg` | HDMI, 640x480 60 Гц | HDMI, I2S ЦАП (PCM5102) | проверено на железе |
-| Karabas Mini | — | | | ещё не собирается |
-| Karabas Go | — | | | ещё не собирается |
+| Karabas Mini | `msx2.kg` | HDMI, 640x480 60 Гц | HDMI, аналоговый выход (sigma-delta) | собрано, на железе не проверено |
+| Karabas Go | `msx2.kg` | VGA, 640x480 60 Гц | I2S ЦАП (PCM5102) | собрано, на железе не проверено |
 
-Файл ядра — `src/msx2.kg` (пока только для Mini G). Нужна прошивка v26103113 или новее.
+Файл ядра — `src/msx2.kg`, один для всех трёх плат. Нужна прошивка v26103113 или новее.
 
 ## Что умеет
 
@@ -33,7 +33,9 @@ SDRAM. ПЛИС плат — Xilinx Spartan-6 XC6SLX25. Вся работа с �
 - **Дисковод:** интерфейс Philips VY-0010 (контроллер WD1793 и его disk ROM, Disk BASIC 1.0) в
   слоте 1 вместо картриджа A, образы `.dsk` на 360 или 720 КБ; образ в фоне читается в SRAM платы,
   запись идёт в SRAM и сразу в файл образа. Файл только для чтения — диск с защитой от записи.
-  Физические дисководы Karabas Go появятся вместе с её сборкой.
+- **Физические дисководы (Karabas Go):** Disk A и Disk B могут быть дисководами разъёма (`[ Physical A ]` /
+  `[ Physical B ]` в файловом браузере, DS0 / DS1), ими управляет модель WD1793 (VG93) на выводах,
+  как в MSX1-ядре.
 - **Nextor на образе жёсткого диска:** SD-интерфейс MSX1FPGA в слоте 1 (вместо картриджа A или
   дисковода) со своим драйвером Nextor, на файле образа (`.img`, `.hdd`, `.vhd`, `.dsk`) с SD-карты
   платы. ROM Nextor — отдельный файл (см. «BIOS и Nextor»). Монтирование первого образа сбрасывает
@@ -55,8 +57,7 @@ V9958 (в том числе YJK), Disk BASIC на `.dsk`, Nextor 2.1 на обр
 сохранение CMOS после перезапуска, kanji BASIC (`CALL KANJI`), турбо (Nextor на 7,16 МГц), чересстрочный экран. На железе ещё не проверены: TAPE_IN / TAPE_OUT, джойстики,
 развёртка 50 Гц, режим V9938.
 
-Ещё нет (`docs/PLAN.md`): сборок для Karabas Go и Mini, SCC MegaRAM, FM-PAC, картриджей с
-батарейкой.
+Ещё нет: SCC MegaRAM, FM-PAC, картриджей с батарейкой.
 
 ## BIOS и Nextor
 
@@ -120,7 +121,8 @@ Tape (Menu+F4), затем `RUN"CAS:"` (программы на BASIC), `BLOAD"C
 | Пункт | Значения | Горячая клавиша |
 |---|---|---|
 | Cart A | картридж в слот 1 (виден при Slot 1 = Cartridge A) | Menu+F1 |
-| Disk A | образ `.dsk` дисковода (виден при Slot 1 = Disk drive) | Menu+F3 |
+| Disk A | образ `.dsk` дисковода, на Go также физический дисковод (виден при Slot 1 = Disk drive) | Menu+F3 |
+| Disk B | только Go: физический дисковод B (виден при Slot 1 = Disk drive) | Menu+F6 |
 | HDD | образ жёсткого диска Nextor (виден при Slot 1 = Nextor) | Menu+F5 |
 | Cart B | картридж в слот 2 | Menu+F2 |
 | Tape | файл `.cas` (серый при Tape input = Tape in) | Menu+F4 |
@@ -168,8 +170,9 @@ BIOS отмеряют сигнал процессором).
 
 ## Сборка
 
-Ядро собирается Xilinx ISE 14.7 под Linux: `cd src && make minig`; `make minig-report` показывает
-занятость ПЛИС и тайминг последней сборки. Модули плат — подмодуль `modules/`
+Ядро собирается Xilinx ISE 14.7 под Linux: `cd src && make` (все три платы по очереди) или
+`make go`, `make mini`, `make minig`; `make minig-report` показывает занятость ПЛИС и тайминг
+последней сборки. Модули плат — подмодуль `modules/`
 ([karabas-go-modules](https://github.com/andykarpov/karabas-go-modules)): клонируйте с
 `git clone --recursive` или выполните `git submodule update --init`. Для упаковки `.kg` нужен соседний
 репозиторий [karabas-go-tools](https://github.com/andykarpov/karabas-go-tools) (`make_core.py`).

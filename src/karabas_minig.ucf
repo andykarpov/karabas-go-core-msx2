@@ -259,6 +259,9 @@ TIMESPEC "TS_VGA_TO_SYS" = FROM "TG_CLK_VGA" TO "TG_CLK_SYS" 23.3 ns DATAPATHONL
 # clock after the rise of DLCLK), a launch on clk_sys by clk21 at its next edge: one period of clk_sys.
 TIMESPEC "TS_21_TO_SYS" = FROM "TG_CLK_21" TO "TG_CLK_SYS" 23.3 ns DATAPATHONLY;
 TIMESPEC "TS_SYS_TO_21" = FROM "TG_CLK_SYS" TO "TG_CLK_21" 23.3 ns DATAPATHONLY;
+# clk21 -> clk_vga: the interlace flag of the VDP (R9 IL) into the output of msx2_fb, a level through kg_sync
+# (two flip-flops): a data path of one clk_vga period at most.
+TIMESPEC "TS_21_TO_VGA" = FROM "TG_CLK_21" TO "TG_CLK_VGA" 40 ns DATAPATHONLY;
 
 # MCU link (kg_mcu): SPI mode 0 from the RP2040 at 16 MHz, bursts up to 32 MHz on the Mini G (BURST_MAX_MHZ).
 NET "MCU_SCK" TNM_NET = "TG_CLK_MCU";

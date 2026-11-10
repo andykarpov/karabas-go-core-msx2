@@ -2,20 +2,23 @@
 `default_nettype wire
 
 /*
- MSX1 core for Karabas Go (VGA through the video DAC, PCM5102).
+ MSX2 core for Karabas Go (VGA through the video DAC, PCM5102).
  The same as karabas_minig_top.v except the board: VGA 8:8:8 + V_CLK instead of HDMI (no DCM, no
  audio over the video), no PCM1808 and no FT_CLK_OUT, MCU_SCK not on a clock pin (bursts at the link
  clock), the chip selects of the FT812 / SD2 on their own pins, the floppy connector for the
  physical drives A / B (msx_fdc_phys).
 
- The machine is MiSTer MSX1 (rtl/msx, see docs/UPSTREAM.md) in msx_system; all file work goes
- through the firmware: the ROMs of core.json (C-BIOS) by the ROM loader, the cartridges and a BIOS
- file by the FL items of the OSD (the file loader of kg_mcu, FILELOAD_SLOT), see msx_system.v.
+ The machine is msx2 (MiSTer MSX1 with the ESE-VDP of OCM-PLD, rtl/msx, see docs/UPSTREAM.md) in
+ msx_system; all file work goes through the firmware: the ROMs of core.json (C-BIOS) by the ROM
+ loader, the cartridges and a BIOS file by the FL items of the OSD (the file loader of kg_mcu,
+ FILELOAD_SLOT), see msx_system.v.
 
  Clocks: one PLL, VCO 600 MHz (50 * 12): clk_sys 42.857 MHz (/14, 12 x 3.57 MHz: the machine, the
- SRAM, the MCU link, audio), clk_vga 25.0 MHz (/24, 640 x 480: msx_video reads its frame buffer,
- the OSD, HDMI), clk_8 8.0 MHz (/75, FT_CLK_OUT: the FT812 must always have its clock, see
- karabas-go-notes ft-clk-out-required). HDMI: kg_dcm 5 x clk_vga and its inverse.
+ SRAM, the MCU link, audio, the SDRAM of the frame buffer), clk21 21.43 MHz (/28, the VDP: its rising
+ edges with every other one of clk_sys), clk_vga 25.0 MHz (/24, 640 x 480: msx2_fb reads its frame
+ buffer, the OSD, V_CLK of the video DAC); CLKOUT2 (8 MHz, the FT812 clock of the Mini boards) is not used.
+ Video: the 15 kHz picture of the VDP through the frame buffer in the SDRAM (msx2_fb) to 640 x 480 at
+ 60 Hz. FLASH_CS_N (T3) is the config flash: 1 (the SDRAM /CS is tied on the Go).
 
  Soft switches (the index of the item in the osd of core.json, file items included; the
  pages of the menu do not change it; separators and the page entry are not registers):
@@ -25,7 +28,9 @@
    page Machine: 13 Slot 1 (cartridge A / disk drive / Nextor)   14 Slot 1 ROM (on / off: the disk
    ROM or the Nextor ROM reads FF, for tests under C-BIOS)   15 Mapper A   16 Mapper B   17 -
    18 RAM (512K mapper / 64K)   19 FM (MSX-MUSIC on / off)   20 Tape input (CAS file / TAPE_IN)
-   21 -   22 BIOS (FL 2)   23 Nextor ROM (FL 5)
+   21 VDP (V9958, MSX2+ / V9938, MSX2)   22 CPU (3.58 / 5.37 / 7.16 MHz), pinned by "index" in core.json;
+   BIOS (FL 2), Nextor ROM (FL 5)
+   7 Video: 0 Auto (R9 of the VDP: the BIOS), 1 PAL 50 Hz, 2 NTSC 60 Hz
  On the Go only: Disk B (F 7, physical drives only) after Disk A; the switches keep the numbers
  above by the "index" of their items in core.json. Disk A / B set to [ Physical A ] / [ Physical B ]
  of the firmware are the drives DS0 / DS1 of the floppy connector (CMD_IMG_PHYS, msx_system).
@@ -125,15 +130,6 @@ module karabas_go_top (
 
 // ------------------------------------------------------------------ unused
 
-assign SDR_BA = 2'b11;
-assign SDR_A = 13'h1FFF;
-assign SDR_CLK = 1'b1;
-assign SDR_DQM = 2'b11;
-assign SDR_WE_N = 1'b1;
-assign SDR_CAS_N = 1'b1;
-assign SDR_RAS_N = 1'b1;
-assign SDR_DQ = 16'bz;
-
 assign WA = 3'b000;
 assign WCS_N = 2'b11;
 assign WRD_N = 1'b1;
@@ -163,7 +159,7 @@ assign UART_RX = 1'bz;
 assign UART_TX = 1'bz;
 assign UART_CTS = 1'bz;
 
-assign FLASH_CS_N = 1'b1;
+assign FLASH_CS_N = 1'b1;  // the config flash (the SDRAM of the Go has its /CS tied)
 assign FLASH_DI = 1'b1;
 assign FLASH_SCK = 1'b0;
 assign FLASH_WP_N = 1'b1;
@@ -173,7 +169,7 @@ assign MRD_N = 2'b00;  // SRAM /OE: always on, msx_sram drives MD only with /WE
 
 // ------------------------------------------------------------------ clocks
 
-wire clk_sys, clk_vga;
+wire clk_sys, clk_vga, clk21;
 wire locked, areset;
 
 wire [5:0] pll_clk;
@@ -184,7 +180,8 @@ kg_pll #(
 	.CLKOUT0_DIVIDE(14),
 	.CLKOUT1_DIVIDE(24),
 	.CLKOUT2_DIVIDE(75),
-	.BUFG_MASK(6'b000011)  // clk_8 (the FT812 clock of the Mini boards) is not used on the Go
+	.CLKOUT3_DIVIDE(28),
+	.BUFG_MASK(6'b001011)  // clk_8 (the FT812 clock of the Mini boards) is not used on the Go
 ) pll (
 	.clk_in(CLK_50MHZ),
 	.rst(1'b0),
@@ -193,6 +190,7 @@ kg_pll #(
 );
 assign clk_sys = pll_clk[0];
 assign clk_vga = pll_clk[1];
+assign clk21 = pll_clk[3];
 assign areset = ~locked;
 
 // the pixel clock of the video DAC
@@ -226,13 +224,21 @@ wire [8:0] img_data_addr;
 wire [15:0] img_sum;
 wire [23:0] img_q_di;
 
+// debug (declared before kg_mcu, XST wants that): the reset of the machine, { valid, SDRAM ready,
+// 3 x 0, the lines of a frame } of msx2_fb
+wire [13:0] fb_dbg;
+wire msx_reset_dbg;
+wire [7:0] rtc_a, rtc_do, rtc_di;
+wire rtc_cs, rtc_wr_n;
+wire [15:0] rtc_dbg;
+
 kg_mcu #(
 	.BURST_MAX_MHZ(0),   // MCU_SCK is not on a clock pin: bursts at the link clock
 	.CS_FILTER(3),
-	.ENABLE_RTC(0),
+	.ENABLE_RTC(1),      // the clock registers (rtc_mode 0, eeprom_bank 4): msx2_rtc, the time and the CMOS
 	.ENABLE_UART(0),
 	.ENABLE_MATRIX(0),
-	.ENABLE_DEBUG(0),
+	.ENABLE_DEBUG(1),    // the state of the frame buffer and the reset of the machine (AT+KARABAS=debug:1)
 	.ENABLE_IMG(1),      // the disk drive: the .dsk image of the F item
 	.ENABLE_IMG_WP(1),   // write protected images (caps bit 5, IMG_WP)
 	.ENABLE_FILE(1),
@@ -290,10 +296,11 @@ kg_mcu #(
 	// not used by this core
 	.PS2_COMMAND(16'h0000),
 	.PS2_COMMAND_WR(1'b0),
-	.RTC_A(8'h00),
-	.RTC_DI(8'h00),
-	.RTC_CS(1'b0),
-	.RTC_WR_N(1'b1),
+	.RTC_A(rtc_a),
+	.RTC_DI(rtc_di),
+	.RTC_DO(rtc_do),
+	.RTC_CS(rtc_cs),
+	.RTC_WR_N(rtc_wr_n),
 	.UART_TX_DATA(8'h00),
 	.UART_TX_WR(1'b0),
 	.UART_TX_MODE(1'b0),
@@ -303,8 +310,8 @@ kg_mcu #(
 	.UART_DLL_WR(1'b0),
 	.MATRIX_CMD(24'h000000),
 	.MATRIX_CMD_WR(1'b0),
-	.DEBUG_ADDR(16'h0000),
-	.DEBUG_DATA(16'h0000),
+	.DEBUG_ADDR({ 1'b0, msx_reset_dbg, fb_dbg }),
+	.DEBUG_DATA(rtc_dbg),
 	.IMG_MOUNTED(img_mounted),
 	.IMG_SIZE(img_size),
 	.IMG_DATA_WR(img_data_wr),
@@ -338,15 +345,15 @@ assign SD_CLK = MCU_SCK;
 
 // ------------------------------------------------------------------ soft switches
 
-wire [21*8-1:0] sw;
-kg_soft_switches #(.N(21)) soft_switches (
+wire [23*8-1:0] sw;
+kg_soft_switches #(.N(23)) soft_switches (
 	.clk(clk_sys),
 	.command(softsw_command),
 	.regs(sw),
 	.upd()
 );
 wire sw_tape_rewind = sw[5*8];
-wire sw_ntsc = sw[7*8];
+wire [1:0] sw_video = sw[7*8 +: 2];   // 0 Auto, 1 PAL, 2 NTSC
 wire sw_joy_swap = sw[8*8];
 wire sw_reset = sw[11*8];
 wire sw_eject = sw[12*8];
@@ -358,15 +365,30 @@ wire [3:0] sw_mapper_b = sw[16*8 +: 4];
 wire sw_ram64 = sw[18*8];
 wire sw_no_fm = sw[19*8];
 wire sw_tape_line = sw[20*8];
+wire sw_v9938 = sw[21*8];
+wire [1:0] sw_turbo = sw[22*8 +: 2];   // 0 3.58, 1 5.37, 2 7.16 MHz
 
 // ------------------------------------------------------------------ the machine
 
-wire [3:0] vdp_col;
-wire vdp_ce_pix, vdp_hor_active, vdp_vert_active;
+assign msx_reset_dbg = areset || sw_reset || mcu_busy;
+wire [7:0] vdp_r, vdp_g, vdp_b;
+wire vdp_hs_n, vdp_vs_n, vdp_dhclk, vdp_il;
 wire [15:0] msx_audio;
+
+// the start of the machine after the mcu (its busy falls): the clock registers of kg_mcu are set then
+reg mcu_busy_d = 1'b1;
+always @(posedge clk_sys) mcu_busy_d <= mcu_busy;
 
 msx_system #(.FDD_PHYS(1)) msx (
 	.clk(clk_sys),
+	.clk21(clk21),
+	.rtc_start(mcu_busy_d && !mcu_busy),
+	.rtc_a(rtc_a),
+	.rtc_do(rtc_do),
+	.rtc_di(rtc_di),
+	.rtc_cs(rtc_cs),
+	.rtc_wr_n(rtc_wr_n),
+	.rtc_dbg(rtc_dbg),
 	.reset(areset || sw_reset || mcu_busy),
 	.rom_active(rom_active),
 	.rom_addr(rom_addr),
@@ -380,7 +402,10 @@ msx_system #(.FDD_PHYS(1)) msx (
 	.file_wr(file_wr),
 	.mapper_a(sw_mapper_a),
 	.mapper_b(sw_mapper_b),
-	.pal(~sw_ntsc),
+	.pal(sw_video == 2'd1),
+	.pal_auto(sw_video == 2'd0),
+	.v9958(~sw_v9938),
+	.turbo(sw_turbo),
 	.joy_swap(sw_joy_swap),
 	.tape_rewind(sw_tape_rewind),
 	.tape_line(sw_tape_line),
@@ -413,10 +438,15 @@ msx_system #(.FDD_PHYS(1)) msx (
 	.kb_scancode_upd(kb_scancode_upd),
 	.joy_l(joy_l),
 	.joy_r(joy_r),
-	.vdp_col(vdp_col),
-	.vdp_ce_pix(vdp_ce_pix),
-	.vdp_hor_active(vdp_hor_active),
-	.vdp_vert_active(vdp_vert_active),
+	.vdp_r(vdp_r),
+	.vdp_g(vdp_g),
+	.vdp_b(vdp_b),
+	.vdp_hs_n(vdp_hs_n),
+	.vdp_vs_n(vdp_vs_n),
+	.vdp_dhclk(vdp_dhclk),
+	.vdp_dlclk(),
+	.vdp_blank(),
+	.vdp_interlace(vdp_il),
 	.audio(msx_audio),
 	.MA(MA),
 	.MD(MD),
@@ -427,17 +457,31 @@ msx_system #(.FDD_PHYS(1)) msx (
 
 wire [23:0] video_rgb;
 wire video_hs, video_vs, video_de;
-msx_video video (
-	.clk(clk_sys),
-	.ce_pix(vdp_ce_pix),
-	.hor_active(vdp_hor_active),
-	.vert_active(vdp_vert_active),
-	.col(vdp_col),
+msx2_fb video (
+	.clk21(clk21),
+	.clk_sys(clk_sys),
 	.clk_vga(clk_vga),
+	.reset(areset),
+	.r_i(vdp_r[7:2]),
+	.g_i(vdp_g[7:2]),
+	.b_i(vdp_b[7:2]),
+	.hs_n_i(vdp_hs_n),
+	.vs_n_i(vdp_vs_n),
+	.dhclk(vdp_dhclk),
+	.il(vdp_il),
 	.rgb(video_rgb),
 	.hs(video_hs),
 	.vs(video_vs),
-	.de(video_de)
+	.de(video_de),
+	.dbg(fb_dbg),
+	.sdr_clk(SDR_CLK),
+	.sdr_a(SDR_A),
+	.sdr_ba(SDR_BA),
+	.sdr_dq(SDR_DQ),
+	.sdr_dqm(SDR_DQM),
+	.sdr_ras_n(SDR_RAS_N),
+	.sdr_cas_n(SDR_CAS_N),
+	.sdr_we_n(SDR_WE_N)
 );
 
 // the OSD commands of kg_mcu (clk_sys) into clk_vga: a word that changes is a command, it crosses
