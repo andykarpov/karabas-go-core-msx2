@@ -4,19 +4,19 @@
 /*
  msx_system.v
 
- The MSX1 part of the three tops: the machine (msx1 of MiSTer MSX1, rtl/msx), the SRAM, the
- loaders of the mcu, the keyboard and the joysticks. Also the unit the simulation runs.
+ The MSX2 part of the three tops: the machine (msx2: msx1 of MiSTer MSX1 with the ESE-VDP, rtl/msx),
+ the SRAM, the loaders of the mcu, the keyboard and the joysticks. Also the unit the simulation runs.
 
  Loading (all of it through the firmware, no loader in the core):
- - the ROM loader (the roms of core.json, at core start): rom_addr is the SRAM byte address
-   (000000 the BIOS, 008000 the ROM of slot 0 page 2: C-BIOS main and logo), the machine is held
-   in reset while rom_active;
+ - the ROM loader (the roms of core.json, at core start): rom_addr is the SRAM byte address (the
+   system ROMs from 000000 as msx2_slots lays them out: C-BIOS main 020000, sub 030000, MSX-MUSIC
+   02C000, logo 03C000), the machine is held in reset while rom_active;
  - the file loader (FL items, ioctl, one write per byte): file_slot 4 = cartridge A (slot 1 of the
    MSX; not 0: the firmware keeps the F and FL items in one array of file slots, and slot 0 is the
-   disk of the F item), 1 = cartridge B (slot 2), 2 = a BIOS file of up to 48 KB (32 KB BIOS + 16 KB of slot 0
-   page 2; a file of 32 KB or less switches page 2 off, the logo ROM of C-BIOS would answer there),
-   3 = a .cas file of the cassette (msx_tape, in the SRAM from 3C0000; no reset), 5 = the Nextor ROM
-   of 128 KB (the SD interface of MSX1FPGA, in the SRAM from 020000).
+   disk of the F item), 1 = cartridge B (slot 2), 2 = the system ROM image of 512 KB (OCM-BIOS.DAT
+   of OCM-PLD, from 000000; it switches the logo ROM of C-BIOS in slot 0-0 page 2 off),
+   3 = a .cas file of the cassette (msx_tape, in the SRAM from 3E0000, 128 KB; no reset), 5 = the
+   Nextor ROM of 128 KB (the SD interface of MSX1FPGA, in the SRAM from 000000).
    The machine is in reset while a cartridge or a BIOS file loads, as MiSTer has it. A cartridge is on from its load
    until eject.
  The disk drive (fdd: slot 1 is the Philips VY-0010 with its WD1793 and disk ROM in place of
@@ -28,6 +28,7 @@
  resets the machine.
 
  clk is 42.857 MHz (12 x 3.57 MHz): ce_10m7 is every fourth clock, as in MiSTer (42.95 MHz there).
+ clk21 is clk / 2 from the same PLL (rising edges together): the clock of the VDP.
 */
 
 module msx_system #(
@@ -35,6 +36,7 @@ module msx_system #(
 	parameter TAPE_SYNC = 1454
 ) (
 	input wire clk,
+	input wire clk21,          // the VDP: clk / 2, rising edges with those of clk
 	input wire reset,          // the reset switch, the mcu busy
 
 	// the ROM loader of the mcu
@@ -54,7 +56,9 @@ module msx_system #(
 	// settings (soft switches)
 	input wire [3:0] mapper_a,
 	input wire [3:0] mapper_b,
-	input wire pal,
+	input wire pal,            // 50 Hz when not pal_auto
+	input wire pal_auto,       // 50 / 60 Hz from R9 of the VDP (the BIOS)
+	input wire v9958,          // the VDP is a V9958 (MSX2+), else a V9938 (MSX2)
 	input wire joy_swap,
 	input wire tape_rewind,    // the OSD item, the CAS file from its start
 	input wire tape_line,      // the cassette input is TAPE_IN (a tape recorder), not the CAS file
@@ -90,11 +94,17 @@ module msx_system #(
 	input wire [12:0] joy_l,   // kg_mcu: 1 up, 2 down, 3 left, 4 right, 6 A, 7 B
 	input wire [12:0] joy_r,
 
-	// video of the VDP for msx_video
-	output wire [3:0] vdp_col,
-	output wire vdp_ce_pix,
-	output wire vdp_hor_active,
-	output wire vdp_vert_active,
+	// the picture of the VDP at 15 kHz (clk21): R / G / B, the syncs, the pixel enables (dhclk
+	// 10.7 MHz: a pixel of the 512 modes; dlclk 5.37 MHz), the blanking, interlace
+	output wire [7:0] vdp_r,
+	output wire [7:0] vdp_g,
+	output wire [7:0] vdp_b,
+	output wire vdp_hs_n,
+	output wire vdp_vs_n,
+	output wire vdp_dhclk,
+	output wire vdp_dlclk,
+	output wire vdp_blank,
+	output wire vdp_interlace,
 
 	output reg [15:0] audio = 16'd0,  // two's complement, registered (the path through the mixer of msx1 is long)
 
@@ -135,21 +145,16 @@ wire ioctl_isNEXTOR = file_on && file_slot == 8'd5;
 wire ioctl_download = ioctl_isROMA || ioctl_isROMB || ioctl_isBIOS || ioctl_isNEXTOR;
 
 reg [1:0] rom_enabled = 2'b00;
-reg fw_rom_en = 1'b1;
-reg bios_d = 1'b0;
+reg logo_en = 1'b1;        // C-BIOS (the roms of core.json) until a system ROM image is loaded
 always @(posedge clk) begin
-	bios_d <= ioctl_isBIOS;
 	if (ioctl_isROMA)
 		rom_enabled[0] <= 1'b1;
 	if (ioctl_isROMB)
 		rom_enabled[1] <= 1'b1;
 	if (eject)
 		rom_enabled <= 2'b00;
-	// a BIOS file: page 2 of slot 0 only with a file over 32 KB
-	if (ioctl_isBIOS && !bios_d)
-		fw_rom_en <= 1'b0;
-	if (ioctl_isBIOS && file_wr && file_addr[15])
-		fw_rom_en <= 1'b1;
+	if (ioctl_isBIOS)
+		logo_en <= 1'b0;
 end
 
 // slot A of MiSTer: 9 is the disk drive
@@ -199,6 +204,10 @@ wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, fdd_byte_out_data, hd_byte_out_data;
 
 wire [21:0] mem_addr;
+wire [16:0] vram_addr;
+wire vram_we_n;
+wire [7:0] vram_dout;
+wire [15:0] vram_din;
 wire [15:0] msx_audio;
 wire mem_we;
 wire [7:0] mem_din, mem_dout;
@@ -207,18 +216,24 @@ wire tape_in_s;
 kg_sync tape_in_sync (.clk(clk), .d(tape_in), .q(tape_in_s));
 assign tape_out = cas_write;
 
-msx1 msx1 (
+msx2 msx2 (
 	.clk(clk),
+	.clk21(clk21),
 	.ce_10m7(ce_10m7),
 	.reset(msx_reset),
-	.border(1'b1),
-	.R(), .G(), .B(),
-	.hsync_n(), .vsync_n(), .hblank(), .vblank(),
-	.vdp_col(vdp_col),
-	.vdp_ce_pix(vdp_ce_pix),
-	.vdp_hor_active(vdp_hor_active),
-	.vdp_vert_active(vdp_vert_active),
+	.R(vdp_r), .G(vdp_g), .B(vdp_b),
+	.hsync_n(vdp_hs_n), .vsync_n(vdp_vs_n),
+	.vdp_blank(vdp_blank),
+	.vdp_dhclk(vdp_dhclk),
+	.vdp_dlclk(vdp_dlclk),
+	.vdp_interlace(vdp_interlace),
 	.vdp_pal(pal),
+	.vdp_pal_auto(pal_auto),
+	.vdp_v9958(v9958),
+	.vram_addr(vram_addr),
+	.vram_we_n(vram_we_n),
+	.vram_dout(vram_dout),
+	.vram_din(vram_din),
 	.audio(msx_audio),
 	.ps2_key(ps2_key),
 	.joy0(joy_swap ? joy_b : joy_a),
@@ -231,7 +246,6 @@ msx1 msx1 (
 	.ioctl_isROMA(ioctl_isROMA),
 	.ioctl_isROMB(ioctl_isROMB),
 	.ioctl_isBIOS(ioctl_isBIOS),
-	.ioctl_isFWBIOS(1'b0),
 	.ioctl_wait(),
 	.rom_enabled(rom_enabled),
 	.cas_motor(cas_motor),
@@ -245,7 +259,7 @@ msx1 msx1 (
 	.mem_we(mem_we),
 	.mem_din(mem_din),
 	.mem_dout(mem_dout),
-	.fw_rom_en(fw_rom_en),
+	.logo_en(logo_en),
 	.ram_mapper_en(ram_mapper),
 	.opll_en(opll),
 	// Nextor: the hard disk image is slot 6 of img_sdc (the firmware shares the slot numbers of the F and
@@ -367,7 +381,7 @@ wire tape_aux_req, tape_aux_we, tape_aux_ack;
 wire [21:0] tape_aux_addr;
 wire [7:0] tape_aux_din;
 
-msx_tape #(.BASE(22'h3C0000), .TAPE_SILENT(TAPE_SILENT), .TAPE_SYNC(TAPE_SYNC)) tape (
+msx_tape #(.BASE(22'h3E0000), .TAPE_SILENT(TAPE_SILENT), .TAPE_SYNC(TAPE_SYNC)) tape (
 	.clk(clk),
 	.ce_5m3(ce_5m3),
 	.motor(cas_motor),
@@ -429,6 +443,11 @@ msx_sram sram (
 	.aux_din(aux_din),
 	.aux_ack(aux_ack),
 	.aux_dout(aux_dout),
+	.vdp_dlclk(vdp_dlclk),
+	.vdp_addr(vram_addr),
+	.vdp_we_n(vram_we_n),
+	.vdp_dout(vram_dout),
+	.vdp_din(vram_din),
 	.MA(MA),
 	.MD(MD),
 	.MWR_N(MWR_N)
