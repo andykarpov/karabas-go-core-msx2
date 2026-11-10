@@ -1,7 +1,7 @@
 {
     "id": "msx2",
     "name": "MSX2",
-    "build": "26111008",
+    "build": "26111009",
     "visible": true,
     "type": "osd",
     "order": 19,

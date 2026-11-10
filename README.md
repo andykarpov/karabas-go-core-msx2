@@ -49,18 +49,18 @@ The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v261
   the board clock.
 - **Video:** the picture of the VDP (256 or 512 dots, 192 / 212 lines, with its border) in 640x480
   at 60 Hz from a frame buffer in the SDRAM; the VDP runs in its PAL (50 Hz) or NTSC (60 Hz) timing:
-  Auto follows register 9 (the BIOS, the programs), or the OSD item Video forces one. Interlaced
-  modes show one field.
+  Auto follows register 9 (the BIOS, the programs), or the OSD item Video forces one. The interlaced
+  modes (424 lines, the two pages in turn) are woven from their two fields into one 480-line frame.
 - **Input:** the USB keyboard as the MSX keyboard, two MSX joysticks: the joysticks of the board or
   USB gamepads.
 
 Checked on the Mini G: C-BIOS and the OCM BIOS (MSX BASIC 3.0), cartridges with sound (PSG, MSX-MUSIC),
 the VDP screens of the V9958 (also YJK), Disk BASIC on a `.dsk`, Nextor 2.1 on a hard disk image,
-a `.cas` game, the time of the board and the CMOS kept over a restart, kanji BASIC (`CALL KANJI`), turbo (Nextor at 7.16 MHz). Not checked on hardware yet:
+a `.cas` game, the time of the board and the CMOS kept over a restart, kanji BASIC (`CALL KANJI`), turbo (Nextor at 7.16 MHz), an interlaced screen. Not checked on hardware yet:
 TAPE_IN / TAPE_OUT, the joysticks, the 50 Hz timing, the V9938 setting.
 
-Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds,
-the interlace of two fields, SCC MegaRAM, FM-PAC, battery cartridges.
+Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds, SCC MegaRAM, FM-PAC, battery
+cartridges.
 
 ## BIOS and Nextor
 

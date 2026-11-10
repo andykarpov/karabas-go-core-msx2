@@ -366,7 +366,7 @@ wire [1:0] sw_turbo = sw[22*8 +: 2];   // 0 3.58, 1 5.37, 2 7.16 MHz
 
 assign msx_reset_dbg = areset || sw_reset || mcu_busy;
 wire [7:0] vdp_r, vdp_g, vdp_b;
-wire vdp_hs_n, vdp_vs_n, vdp_dhclk;
+wire vdp_hs_n, vdp_vs_n, vdp_dhclk, vdp_il;
 wire [15:0] msx_audio;
 
 // the start of the machine after the mcu (its busy falls): the clock registers of kg_mcu are set then
@@ -440,7 +440,7 @@ msx_system msx (
 	.vdp_dhclk(vdp_dhclk),
 	.vdp_dlclk(),
 	.vdp_blank(),
-	.vdp_interlace(),
+	.vdp_interlace(vdp_il),
 	.audio(msx_audio),
 	.MA(MA),
 	.MD(MD),
@@ -462,6 +462,7 @@ msx2_fb video (
 	.hs_n_i(vdp_hs_n),
 	.vs_n_i(vdp_vs_n),
 	.dhclk(vdp_dhclk),
+	.il(vdp_il),
 	.rgb(video_rgb),
 	.hs(video_hs),
 	.vs(video_vs),
