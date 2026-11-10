@@ -13,10 +13,11 @@ core has no loader of its own. The plan and the decisions are in `docs/PLAN.md` 
 | Board | Core file | Video | Audio | State |
 |---|---|---|---|---|
 | Karabas Mini G | `msx2.kg` | HDMI, 640x480 60 Hz | HDMI, I2S DAC (PCM5102) | tested on hardware |
-| Karabas Mini | — | | | not built yet |
-| Karabas Go | — | | | not built yet |
+| Karabas Mini | `msx2.kg` | HDMI, 640x480 60 Hz | HDMI, analog output (sigma-delta) | built, not tested on hardware |
+| Karabas Go | `msx2.kg` | VGA, 640x480 60 Hz | I2S DAC (PCM5102) | built, not tested on hardware |
 
-The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v26103113 or later.
+The core file is `src/msx2.kg`, one file for all three boards. It needs the firmware v26103113 or
+later.
 
 ## What it does
 
@@ -34,7 +35,10 @@ The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v261
 - **Disk drive:** the Philips VY-0010 interface (WD1793 FDC and its disk ROM, Disk BASIC 1.0) in
   slot 1 instead of cartridge A, with `.dsk` images of 360 or 720 KB, read into the SRAM of the board
   in the background; writes go to the SRAM and to the image file at once. A read only image file is
-  a write protected disk. The physical floppy drives of the Karabas Go come with its build.
+  a write protected disk.
+- **Physical floppy drives (Karabas Go):** Disk A and Disk B can be the drives of the floppy
+  connector (`[ Physical A ]` / `[ Physical B ]` in the file browser, the drives DS0 / DS1), driven
+  by a model of the WD1793 (VG93) at the pins, as in the MSX1 core.
 - **Nextor on a hard disk image:** the SD interface of MSX1FPGA in slot 1 (instead of cartridge A
   or the drive) with its Nextor driver, on an image file (`.img`, `.hdd`, `.vhd`, `.dsk`) of the SD
   card of the board. The Nextor ROM is a file (see "BIOS and Nextor"). Mounting the first image
@@ -59,8 +63,7 @@ the VDP screens of the V9958 (also YJK), Disk BASIC on a `.dsk`, Nextor 2.1 on a
 a `.cas` game, the time of the board and the CMOS kept over a restart, kanji BASIC (`CALL KANJI`), turbo (Nextor at 7.16 MHz), an interlaced screen. Not checked on hardware yet:
 TAPE_IN / TAPE_OUT, the joysticks, the 50 Hz timing, the V9938 setting.
 
-Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds, SCC MegaRAM, FM-PAC, battery
-cartridges.
+Not there yet: SCC MegaRAM, FM-PAC, battery cartridges.
 
 ## BIOS and Nextor
 
@@ -124,7 +127,8 @@ The main page has the media, video and reset items; the machine settings are on 
 | Item | Values | Hotkey |
 |---|---|---|
 | Cart A | a cartridge for slot 1 (shown when Slot 1 = Cartridge A) | Menu+F1 |
-| Disk A | the `.dsk` image of the drive (shown when Slot 1 = Disk drive) | Menu+F3 |
+| Disk A | the `.dsk` image of the drive, on the Go also a physical drive (shown when Slot 1 = Disk drive) | Menu+F3 |
+| Disk B | Go only: a physical drive as drive B (shown when Slot 1 = Disk drive) | Menu+F6 |
 | HDD | the hard disk image of Nextor (shown when Slot 1 = Nextor) | Menu+F5 |
 | Cart B | a cartridge for slot 2 | Menu+F2 |
 | Tape | a `.cas` file (grey when Tape input = Tape in) | Menu+F4 |
@@ -173,8 +177,9 @@ characters of the OCM BIOS). The special keys of the MSX:
 
 ## Building
 
-The core is built with Xilinx ISE 14.7 on Linux: `cd src && make minig`; `make minig-report` shows
-the utilization and the timing of the last build. The board modules are the submodule `modules/`
+The core is built with Xilinx ISE 14.7 on Linux: `cd src && make` (all three boards, one after the
+other), or `make go`, `make mini`, `make minig`; `make minig-report` shows the utilization and the
+timing of the last build. The board modules are the submodule `modules/`
 ([karabas-go-modules](https://github.com/andykarpov/karabas-go-modules)): clone with
 `git clone --recursive` or run `git submodule update --init`. Packing the `.kg` file needs the sibling
 repo [karabas-go-tools](https://github.com/andykarpov/karabas-go-tools) next to this one
