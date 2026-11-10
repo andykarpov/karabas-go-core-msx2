@@ -467,12 +467,46 @@ jt2413 opll
 // karabas: the MSX-MUSIC ROM is in slot 0-2 now (msx2_slots), the fake header of the MSX1 core
 // (APRLOPLL in slot 2) is gone
 
+// karabas: the kanji ROM, JIS level 1 at the ports D8 (address bits 10..5) / D9 (bits 16..11, the
+// reads of the font), level 2 at DA / DB: a write sets the character and clears the counter, a read
+// of D9 / DB gives byte <counter> (0..31) of the character and steps the counter. The font is 256 KB
+// at 040000 of the SRAM (OCM-BIOS.DAT; level 2 from 060000), read through the memory port in the
+// I/O cycle. D8 / DA read FF.
+wire        kanji_sel = ~iorq_n & m1_n & (a[7:2] == 6'b110110);
+wire        kanji_rd  = kanji_sel & ~rd_n & a[0];
+reg  [11:0] kanji_c1 = 12'd0, kanji_c2 = 12'd0;    // the characters of level 1 / 2
+reg   [4:0] kanji_n1 = 5'd0, kanji_n2 = 5'd0;      // their counters
+reg         kanji_wr_d = 1'b0, kanji_rd_d = 1'b0, kanji_l2 = 1'b0;
+always @(posedge clk) begin
+	kanji_wr_d <= kanji_sel & ~wr_n;
+	kanji_rd_d <= kanji_rd;
+	if (kanji_rd) kanji_l2 <= a[1];
+	if (reset) begin
+		kanji_c1 <= 12'd0; kanji_c2 <= 12'd0; kanji_n1 <= 5'd0; kanji_n2 <= 5'd0;
+	end
+	else if (kanji_sel & ~wr_n & ~kanji_wr_d) begin
+		case (a[1:0])
+			2'd0: begin kanji_c1[5:0]  <= d_from_cpu[5:0]; kanji_n1 <= 5'd0; end
+			2'd1: begin kanji_c1[11:6] <= d_from_cpu[5:0]; kanji_n1 <= 5'd0; end
+			2'd2: begin kanji_c2[5:0]  <= d_from_cpu[5:0]; kanji_n2 <= 5'd0; end
+			default: begin kanji_c2[11:6] <= d_from_cpu[5:0]; kanji_n2 <= 5'd0; end
+		endcase
+	end
+	else if (kanji_rd_d & ~kanji_rd) begin    // the end of a read
+		if (kanji_l2) kanji_n2 <= kanji_n2 + 5'd1;
+		else kanji_n1 <= kanji_n1 + 5'd1;
+	end
+end
+wire [21:0] kanji_addr = a[1] ? { 4'b0001, 1'b1, kanji_c2, kanji_n2 } : { 4'b0001, 1'b0, kanji_c1, kanji_n1 };
+
 //  -----------------------------------------------------------------------------
 //  -- CPU data multiplex
 //  -----------------------------------------------------------------------------
 // karabas: the expansion registers, the ROMs of slots 0 and 3 (msx2_slots), slot 0 and 3 read FF
 // where nothing is; the RAM of 3-0 through slots.v (its slot 3)
-assign d_to_cpu = exp_rd                 ? exp_q :
+assign d_to_cpu = kanji_rd               ? mem_dout : // karabas
+                  (kanji_sel & ~rd_n)    ? 8'hFF :    // karabas
+                  exp_rd                 ? exp_q :
                   rom_sel                ? mem_dout :
                   ~(SLTSL_n[0])          ? 8'hFF :
                   nextor_sel             ? nextor_q : // karabas
@@ -633,6 +667,7 @@ assign mem_addr = ioctl_isBIOS            ? {3'b000, ioctl_addr[18:0]} :
                   ioctl_isNEXTOR          ? {5'b00000, ioctl_addr[16:0]} :
                   ioctl_isROMA            ? {2'b10, ioctl_addr[19:0]} :
                   ioctl_isROMB            ? {2'b01, ioctl_addr[19:0]} :
+                  kanji_rd                ? kanji_addr : // karabas
                   rom_sel                 ? rom_addr :
                   ram_sel                 ? {3'b001, ram_segment, a[13:0]} :
                   nextor_mem              ? {5'b00000, nextor_bank, a[13:0]} :

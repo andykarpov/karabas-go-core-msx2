@@ -23,7 +23,8 @@ The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v261
 - **MSX2 / MSX2+:** Z80 (T80) at 3.58 MHz, the ESE-VDP of OCM-PLD as a V9958 (MSX2+: YJK screens
   10..12, horizontal scroll) or a V9938 (OSD item VDP), 128 KB of VRAM, AY-3-8910 PSG (jt49), PPI,
   512 KB of RAM with the memory mapper (ports FC-FF; the OSD item RAM, 64K: plain 64 KB), the RTC
-  RP5C01 (ports B4-B5) with the time of the board.
+  RP5C01 (ports B4-B5) with the time of the board, the kanji ROM (ports D8-DB, JIS levels 1 and 2)
+  with the font of the BIOS file.
 - **MSX-MUSIC:** the OPLL (YM2413, [jt2413](https://github.com/jotego/jtopl)) at the ports 7C-7D, the
   MSX-MUSIC ROM in its slot (C-BIOS: 3-1, the OCM BIOS: 0-2). The OSD item FM (MSX-MUSIC) turns it
   off.
@@ -55,10 +56,10 @@ The core file is `src/msx2.kg` (Mini G only for now). It needs the firmware v261
 
 Checked on the Mini G: C-BIOS and the OCM BIOS (MSX BASIC 3.0), cartridges with sound (PSG, MSX-MUSIC),
 the VDP screens of the V9958 (also YJK), Disk BASIC on a `.dsk`, Nextor 2.1 on a hard disk image,
-a `.cas` game, the time of the board and the CMOS kept over a restart. Not checked on hardware yet:
+a `.cas` game, the time of the board and the CMOS kept over a restart, kanji BASIC (`CALL KANJI`). Not checked on hardware yet:
 TAPE_IN / TAPE_OUT, the joysticks, the 50 Hz timing, the V9938 setting.
 
-Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds, the kanji ROM (ports D8-DB), turbo,
+Not there yet (`docs/PLAN.md`): the Karabas Go and Mini builds, turbo,
 the interlace of two fields, SCC MegaRAM, FM-PAC, battery cartridges.
 
 ## BIOS and Nextor
@@ -79,7 +80,7 @@ of a real machine, are not supported yet: the core places the system ROMs as tha
 | 028000 | XBASIC | 3-3 |
 | 02C000 | MSX-MUSIC | 0-2 |
 | 030000 | sub-ROM, kanji BASIC | 3-1 |
-| 040000 | kanji font | (no kanji ports yet) |
+| 040000 | kanji font, JIS levels 1 and 2 (256 KB) | the kanji ports D8-DB |
 
 RAM is in slot 3-0. With C-BIOS the layout is that of its openMSX configuration instead: slot 0 not
 expanded (main ROM, logo), 3-0 sub-ROM, 3-1 MSX-MUSIC, 3-2 RAM. The layout follows the file: the C-BIOS

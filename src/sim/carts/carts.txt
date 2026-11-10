@@ -15,3 +15,6 @@ rammap      rammap.rom      0 75 9c0eb41c
 rammap64    rammap.rom      0 75 9e291fac --ram64
 fm          fmtest.rom      0 75 e4477229 --audio-min 2000
 fm_off      fmtest.rom      0 75 59b16c31 --no-opll --audio-max 100
+# kanji: the kanji ROM ports with the pattern font at 040000, "KANJI oooooooo OK"; kanji_nofont without it, "KANJI xxxxxxxx"
+kanji       kanjitest.rom   0 60 9d00a5bc --rom sim/build/carts/kanjifont.bin:0x40000
+kanji_nofont kanjitest.rom  0 60 747e8bcd

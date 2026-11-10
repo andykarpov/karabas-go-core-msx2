@@ -23,7 +23,8 @@ SDRAM. ПЛИС плат — Xilinx Spartan-6 XC6SLX25. Вся работа с �
 - **MSX2 / MSX2+:** Z80 (T80) на 3,58 МГц, ESE-VDP из OCM-PLD как V9958 (MSX2+: YJK-режимы
   SCREEN 10–12, горизонтальный скролл) или V9938 (пункт OSD VDP), 128 КБ VRAM, звук AY-3-8910 (jt49),
   PPI, 512 КБ ОЗУ с memory mapper (порты FC–FF; пункт OSD RAM, 64K: просто 64 КБ), часы RP5C01
-  (порты B4–B5) со временем платы.
+  (порты B4–B5) со временем платы, kanji ROM (порты D8–DB, JIS уровней 1 и 2) со шрифтом из файла
+  BIOS.
 - **MSX-MUSIC:** OPLL (YM2413, [jt2413](https://github.com/jotego/jtopl)) на портах 7C–7D, ROM
   MSX-MUSIC в своём слоте (C-BIOS: 3-1, BIOS OCM: 0-2). Пункт OSD FM (MSX-MUSIC) его выключает.
 - **Два слота картриджей** (A в слоте 1, B в слоте 2), до 1 МБ каждый, маппер определяется по ROM:
@@ -50,10 +51,10 @@ SDRAM. ПЛИС плат — Xilinx Spartan-6 XC6SLX25. Вся работа с �
 
 Проверено на Mini G: C-BIOS и BIOS OCM (MSX BASIC 3.0), картриджи со звуком (PSG, MSX-MUSIC), экраны
 V9958 (в том числе YJK), Disk BASIC на `.dsk`, Nextor 2.1 на образе диска, игра с `.cas`, время платы и
-сохранение CMOS после перезапуска. На железе ещё не проверены: TAPE_IN / TAPE_OUT, джойстики,
+сохранение CMOS после перезапуска, kanji BASIC (`CALL KANJI`). На железе ещё не проверены: TAPE_IN / TAPE_OUT, джойстики,
 развёртка 50 Гц, режим V9938.
 
-Ещё нет (`docs/PLAN.md`): сборок для Karabas Go и Mini, kanji ROM (порты D8–DB), турбо, чересстрочного
+Ещё нет (`docs/PLAN.md`): сборок для Karabas Go и Mini, турбо, чересстрочного
 режима из двух полей, SCC MegaRAM, FM-PAC, картриджей с батарейкой.
 
 ## BIOS и Nextor
@@ -74,7 +75,7 @@ SDBIOS OCM-PLD, есть и в наборе SD-карты uMSX). Другие о
 | 028000 | XBASIC | 3-3 |
 | 02C000 | MSX-MUSIC | 0-2 |
 | 030000 | sub-ROM, kanji BASIC | 3-1 |
-| 040000 | шрифт kanji | (портов kanji пока нет) |
+| 040000 | шрифт kanji, JIS уровней 1 и 2 (256 КБ) | порты kanji D8–DB |
 
 ОЗУ — в слоте 3-0. С C-BIOS раскладка другая, как в его конфигурации openMSX: слот 0 не расширен
 (main ROM, логотип), 3-0 sub-ROM, 3-1 MSX-MUSIC, 3-2 ОЗУ. Раскладка выбирается по файлу: раскладка
