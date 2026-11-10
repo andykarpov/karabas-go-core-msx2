@@ -1,6 +1,7 @@
 // karabas: msx1 of MSX1_MiSTer, renamed (the MSX2 machine of karabas-go-core-msx2); the VDP is
 // the ESE-VDP (V9938 / V9958) of OCM-PLD instead of vdp18, its VRAM of 128 KB in the SRAM
-module msx2
+// karabas: FDD_PHYS = 1: the physical floppy drives of the Karabas Go (see vy0010)
+module msx2 #(parameter FDD_PHYS = 0)
 (
 	input         clk,
 	input         clk21,         // karabas: the clock of the VDP, clk / 2 from the same PLL, rising edges together
@@ -62,6 +63,7 @@ module msx2
 	input         ioctl_isNEXTOR,
 	input         hd_mounted,
 	input  [31:0] hd_size,
+	input         hd_wp,         // karabas: the hard disk image is write protected (status bit 2 of nextor_sd)
 	output        hd_rd,
 	output        hd_wr,
 	output [31:0] hd_lba,
@@ -83,7 +85,12 @@ module msx2
 	input   [7:0] sd_buff_dout,
 	output  [7:0] sd_buff_din,
 	input         sd_buff_wr,
-	input         sd_din_strobe
+	input         sd_din_strobe,
+	// karabas: the physical floppy drives (FDD_PHYS): drive A / B on DS0 (1) / DS1 (2) or not (0), the pins
+	input   [1:0] fdd_phys_a,
+	input   [1:0] fdd_phys_b,
+	input   [3:0] fdd_in,
+	output  [7:0] fdd_out
 );
 
 // karabas: the wires used before their declaration below (Quartus takes it, XST does not)
@@ -415,6 +422,7 @@ nextor_sd nextor
 	.mem_dout(mem_dout),
 	.img_mounted(hd_mounted),
 	.img_size(hd_size),
+	.img_wp(hd_wp),
 	.hd_rd(hd_rd),
 	.hd_wr(hd_wr),
 	.hd_lba(hd_lba),
@@ -535,7 +543,7 @@ jt49_bus PSG
 //  -----------------------------------------------------------------------------
 //  -- SLOTS
 //  -----------------------------------------------------------------------------
-slots slots
+slots #(.FDD_PHYS(FDD_PHYS)) slots // karabas: FDD_PHYS
 (
 	.clk(clk),
 	.clk_en(clk_en_3m58_p),
@@ -580,7 +588,11 @@ slots slots
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din),
 	.sd_buff_wr(sd_buff_wr),
-	.sd_din_strobe(sd_din_strobe)
+	.sd_din_strobe(sd_din_strobe),
+	.fdd_phys_a(fdd_phys_a),     // karabas: the physical floppy drives
+	.fdd_phys_b(fdd_phys_b),
+	.fdd_in(fdd_in),
+	.fdd_out(fdd_out)
 );
 
 //  -----------------------------------------------------------------------------

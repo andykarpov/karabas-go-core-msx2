@@ -5,7 +5,8 @@
  MSX1 core for Karabas Go (VGA through the video DAC, PCM5102).
  The same as karabas_minig_top.v except the board: VGA 8:8:8 + V_CLK instead of HDMI (no DCM, no
  audio over the video), no PCM1808 and no FT_CLK_OUT, MCU_SCK not on a clock pin (bursts at the link
- clock), the chip selects of the FT812 / SD2 on their own pins, the floppy connector unused.
+ clock), the chip selects of the FT812 / SD2 on their own pins, the floppy connector for the
+ physical drives A / B (msx_fdc_phys).
 
  The machine is MiSTer MSX1 (rtl/msx, see docs/UPSTREAM.md) in msx_system; all file work goes
  through the firmware: the ROMs of core.json (C-BIOS) by the ROM loader, the cartridges and a BIOS
@@ -25,6 +26,9 @@
    ROM or the Nextor ROM reads FF, for tests under C-BIOS)   15 Mapper A   16 Mapper B   17 -
    18 RAM (512K mapper / 64K)   19 FM (MSX-MUSIC on / off)   20 Tape input (CAS file / TAPE_IN)
    21 -   22 BIOS (FL 2)   23 Nextor ROM (FL 5)
+ On the Go only: Disk B (F 7, physical drives only) after Disk A; the switches keep the numbers
+ above by the "index" of their items in core.json. Disk A / B set to [ Physical A ] / [ Physical B ]
+ of the firmware are the drives DS0 / DS1 of the floppy connector (CMD_IMG_PHYS, msx_system).
 */
 
 module karabas_go_top (
@@ -145,13 +149,16 @@ assign MIDI_RESET_N = 1'b1;
 assign FT_OE_N = 1'b1;     // the FT812 does not drive the video DAC
 assign BEEPER = 1'b0;
 
-assign FDC_DRIVE = 2'b00;
-assign FDC_MOTOR = 1'b0;
-assign FDC_DIR = 1'b0;
-assign FDC_STEP = 1'b0;
-assign FDC_WDATA = 1'b0;
-assign FDC_WGATE = 1'b0;
-assign FDC_SIDE_N = 1'b1;
+// the floppy connector (high = active at the pins, the board has inverters; FDC_SIDE_N is side 1 when
+// high): msx_fdc_phys through msx_system, registered there, all 0 without a physical drive
+wire [7:0] fdd_out;
+assign FDC_DRIVE = fdd_out[1:0];
+assign FDC_MOTOR = fdd_out[2];
+assign FDC_DIR = fdd_out[3];
+assign FDC_STEP = fdd_out[4];
+assign FDC_SIDE_N = fdd_out[5];
+assign FDC_WGATE = fdd_out[6];
+assign FDC_WDATA = fdd_out[7];
 assign UART_RX = 1'bz;
 assign UART_TX = 1'bz;
 assign UART_CTS = 1'bz;
@@ -212,7 +219,9 @@ wire dvi_only;
 wire ft_cs_n, ft_mosi, ft_spi_on, sd2_cs_n, sd2_mosi;
 wire [7:0] img_mounted, img_data, img_result;
 wire [63:0] img_size;
-wire img_data_wr, img_result_wr, img_q_wr, img_q_ack;
+wire img_data_wr, img_result_wr, img_q_wr, img_q_ack, img_phys_wr;
+wire [15:0] img_phys;
+wire [7:0] img_wp;
 wire [8:0] img_data_addr;
 wire [15:0] img_sum;
 wire [23:0] img_q_di;
@@ -225,6 +234,7 @@ kg_mcu #(
 	.ENABLE_MATRIX(0),
 	.ENABLE_DEBUG(0),
 	.ENABLE_IMG(1),      // the disk drive: the .dsk image of the F item
+	.ENABLE_IMG_WP(1),   // write protected images (caps bit 5, IMG_WP)
 	.ENABLE_FILE(1),
 	.FILE_CMDS(0),       // the ioctl commands of the FL items
 	.FILE_WR_EACH(1),
@@ -306,10 +316,17 @@ kg_mcu #(
 	.IMG_Q_WR(img_q_wr),
 	.IMG_Q_DI(img_q_di),
 	.IMG_Q_ACK(img_q_ack),
+	.IMG_PHYS_WR(img_phys_wr),
+	.IMG_PHYS(img_phys),
+	.IMG_WP(img_wp),
 	.ESP_UART_RX_DATA(8'h00),
 	.ESP_UART_RX_WR(1'b0),
 	.FLASHBOOT_START(1'b0),
-	.FLASHBOOT_COREID(5'd0)
+	.FLASHBOOT_COREID(5'd0),
+	.FDD_CHNG_REQ(1'b0),   // no DSKCHG: the disk ROM finds a disk change itself
+	.FDD_CHNG_DS(2'b00),
+	.PRN_DATA(8'h00),
+	.PRN_WR(1'b0)
 );
 
 assign FT_SPI_CS_N = ft_spi_on ? ft_cs_n : 1'b1;
@@ -348,7 +365,7 @@ wire [3:0] vdp_col;
 wire vdp_ce_pix, vdp_hor_active, vdp_vert_active;
 wire [15:0] msx_audio;
 
-msx_system msx (
+msx_system #(.FDD_PHYS(1)) msx (
 	.clk(clk_sys),
 	.reset(areset || sw_reset || mcu_busy),
 	.rom_active(rom_active),
@@ -386,6 +403,11 @@ msx_system msx (
 	.img_q_wr(img_q_wr),
 	.img_q_di(img_q_di),
 	.img_q_ack(img_q_ack),
+	.img_phys_wr(img_phys_wr),
+	.img_phys(img_phys),
+	.img_wp(img_wp),
+	.fdd_in({ FDC_RDATA, FDC_WPRT, FDC_TR00, FDC_INDEX }),
+	.fdd_out(fdd_out),
 	.fdd_active(),
 	.kb_scancode(kb_scancode),
 	.kb_scancode_upd(kb_scancode_upd),

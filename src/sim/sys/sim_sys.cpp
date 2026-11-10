@@ -318,7 +318,7 @@ int main(int argc, char **argv) {
 	std::vector<std::pair<std::string, uint32_t>> roms;
 	std::string cart_a, cart_b, bios, ppm;
 	int nframes = 60, every = 0, mapper_a = 0;
-	bool pal = false, v9938 = false, fast_logo = false, hash = false, fdd = false, ram64 = false, no_opll = false;
+	bool pal = false, v9938 = false, fast_logo = false, bios_first = false, hash = false, fdd = false, ram64 = false, no_opll = false;
 	int audio_min = -1, audio_max = -1;
 	std::string save_disk, cas, save_hdd, nextor_rom;
 	bool nextor = false, no_slot1_rom = false;
@@ -341,6 +341,7 @@ int main(int argc, char **argv) {
 		else if (a == "--pal") pal = true;
 		else if (a == "--v9938") v9938 = true;
 		else if (a == "--fast-logo") fast_logo = true;
+		else if (a == "--bios-first") bios_first = true;
 		else if (a == "--ram64") ram64 = true;
 		else if (a == "--no-opll") no_opll = true;
 		else if (a == "--audio-min") audio_min = atoi(next().c_str());
@@ -387,6 +388,9 @@ int main(int argc, char **argv) {
 	top->opll = !no_opll;
 	top->eval();
 	clk_cycles(100);
+	// --bios-first: the BIOS file before the roms (the order of the firmware of 2026-11-10: the FL autoload
+	// first); the core must keep the BIOS file then
+	if (bios_first && !bios.empty()) file_load(load(bios.c_str()), 2);
 	for (auto &r : roms) rom_load(load(r.first.c_str()), r.second);
 	if (fast_logo) {
 		std::vector<uint8_t> stub(17, 0);
@@ -402,7 +406,7 @@ int main(int argc, char **argv) {
 		}
 		else printf("fast-logo: no wait at 0E05\n");
 	}
-	if (!bios.empty()) file_load(load(bios.c_str()), 2);
+	if (!bios_first && !bios.empty()) file_load(load(bios.c_str()), 2);
 	if (!cart_a.empty()) file_load(load(cart_a.c_str()), 4);
 	if (!cart_b.empty() && cas.empty()) file_load(load(cart_b.c_str()), 1);
 	if (fdd) mount_at = clks + 1000;

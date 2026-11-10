@@ -227,10 +227,14 @@ NET "FLASH_HOLD_N"     LOC="P12"    | IOSTANDARD = LVCMOS33; # CONF_IO3
 #
 # Clocks (kg_pll in the tops), one PLL on CLK_50MHZ, VCO 600 MHz (50 * 12), phase 0:
 #   pll_clk<0> 42.857 MHz (/14) -> clk_sys: the MSX (msx_system, its enables 10.7 / 5.37 / 3.58 MHz), the SRAM
-#              (msx_sram), the MCU link, the write side of the frame buffer, audio
-#   pll_clk<1> 25.0 MHz (/24)   -> clk_vga: 640 x 480 (msx_video reads the frame buffer), the OSD, HDMI; on the
+#              (msx_sram), the MCU link, the SDRAM side of the frame buffer (msx2_fb_sdram), audio
+#   pll_clk<1> 25.0 MHz (/24)   -> clk_vga: 640 x 480 (msx2_fb reads its output buffer), the OSD, HDMI; on the
 #              Mini / Mini G the input of the HDMI DCM (kg_dcm, x5 and its inverse for the serialisers)
 #   pll_clk<2> 8.0 MHz (/75)    -> clk_8: FT_CLK_OUT only (an ODDR2)
+#   pll_clk<3> 21.43 MHz (/28)  -> clk21: the VDP and the capture of msx2_fb; its edges are every other one of
+#              clk_sys (one VCO, /14 and /28): the paths between them are synchronous, but the derived PERIODs
+#              (50 MHz / 0.857142857 and / 0.428571429) put their edges 1 ps apart and ask for 0.001 ns: see
+#              TS_21_TO_SYS below
 # The PERIOD of CLK_50MHZ is derived onto the PLL outputs and the DCM, so the paths in each clock and between
 # clk_vga and the 5x clocks of HDMI are analysed with their phases.
 # ------------------------------------------------------------------------------------------------------------
@@ -239,6 +243,7 @@ TIMESPEC "TS_CLK_50MHZ" = PERIOD "CLK_50MHZ" 20 ns HIGH 50%;
 
 NET "pll_clk<0>" TNM_NET = "TG_CLK_SYS";
 NET "pll_clk<1>" TNM_NET = "TG_CLK_VGA";
+NET "pll_clk<3>" TNM_NET = "TG_CLK_21";
 
 # clk_sys <-> clk_vga: the frame buffer of msx_video (block RAMs with a port in each clock, no path through
 # them); the rest crosses with synchronisers or a handshake: the border colour and the text flag (kg_sync), the
@@ -248,6 +253,12 @@ NET "pll_clk<1>" TNM_NET = "TG_CLK_VGA";
 # paths do not rely on. Their data paths are bounded by the smaller period (clk_sys, as kg_async_fifo asks).
 TIMESPEC "TS_SYS_TO_VGA" = FROM "TG_CLK_SYS" TO "TG_CLK_VGA" 23.3 ns DATAPATHONLY;
 TIMESPEC "TS_VGA_TO_SYS" = FROM "TG_CLK_VGA" TO "TG_CLK_SYS" 23.3 ns DATAPATHONLY;
+
+# clk21 <-> clk_sys (the VDP and the machine, the VRAM slot of msx_sram, the capture of msx2_fb): a launch on an
+# edge of clk21 is taken by clk_sys one of its periods later at the earliest (the slot of the VDP starts the
+# clock after the rise of DLCLK), a launch on clk_sys by clk21 at its next edge: one period of clk_sys.
+TIMESPEC "TS_21_TO_SYS" = FROM "TG_CLK_21" TO "TG_CLK_SYS" 23.3 ns DATAPATHONLY;
+TIMESPEC "TS_SYS_TO_21" = FROM "TG_CLK_SYS" TO "TG_CLK_21" 23.3 ns DATAPATHONLY;
 
 # MCU link (kg_mcu): SPI mode 0 from the RP2040 at 16 MHz, bursts up to 32 MHz on the Mini G (BURST_MAX_MHZ).
 NET "MCU_SCK" TNM_NET = "TG_CLK_MCU";
@@ -266,3 +277,11 @@ TIMEGRP "TG_SRAM_IN" = PADS("MD<*>");
 TIMEGRP "TG_SRAM_OUT" = "TG_SRAM_IN" PADS("MA<*>") PADS("MWR_N<*>");
 TIMESPEC "TS_SRAM_OUT" = FROM FFS TO "TG_SRAM_OUT" 12 ns DATAPATHONLY;
 TIMESPEC "TS_SRAM_IN" = FROM "TG_SRAM_IN" TO FFS 12 ns DATAPATHONLY;
+
+# SDRAM of the frame buffer (msx2_fb_sdram, clk_sys; SDR_CLK is clk_sys inverted from an ODDR2): the commands,
+# the address and the write data leave IOB flip-flops on the rising edge, half a period before the SDRAM
+# edge; a read word is taken by the IOB flip-flop of the falling edge. FLASH_CS_N is the /CS of Mini G2 (0).
+TIMEGRP "TG_SDR_IN" = PADS("SDR_DQ<*>");
+TIMEGRP "TG_SDR_OUT" = "TG_SDR_IN" PADS("SDR_A<*>") PADS("SDR_BA<*>") PADS("SDR_DQM<*>") PADS("SDR_RAS_N") PADS("SDR_CAS_N") PADS("SDR_WE_N");
+TIMESPEC "TS_SDR_OUT" = FROM FFS TO "TG_SDR_OUT" 12 ns DATAPATHONLY;
+TIMESPEC "TS_SDR_IN" = FROM "TG_SDR_IN" TO FFS 8 ns DATAPATHONLY;

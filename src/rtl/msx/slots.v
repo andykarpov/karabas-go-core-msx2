@@ -43,8 +43,14 @@ module slots (
 	slot_B,
 	fdd_rom_en,
 	rom_enabled,
-	mapper_info
+	mapper_info,
+	fdd_phys_a,
+	fdd_phys_b,
+	fdd_in,
+	fdd_out
 );
+	// karabas: the physical floppy drives of the Karabas Go (FDD_PHYS = 1, see vy0010)
+	parameter FDD_PHYS = 0;
 	input clk;
 	input clk_en;
 	input reset;
@@ -92,6 +98,10 @@ module slots (
 	input fdd_rom_en;
 	input [1:0] rom_enabled;
 	output wire [2:0] mapper_info;
+	input [1:0] fdd_phys_a;
+	input [1:0] fdd_phys_b;
+	input [3:0] fdd_in;
+	output wire [7:0] fdd_out;
 	wire [14:0] sound_slot_A;
 	wire [14:0] sound_slot_B;
 	assign sound = {sound_slot_A[14], sound_slot_A} + {sound_slot_B[14], sound_slot_B};
@@ -171,8 +181,12 @@ module slots (
 		.detected_mapper(detected_mapper_A),
 		.rom_enabled(rom_enabled[0])
 	);
-	vy0010 FDD(
+	vy0010 #(.PHYS(FDD_PHYS)) FDD(
 		.rom_en(fdd_rom_en),
+		.phys_a(fdd_phys_a),
+		.phys_b(fdd_phys_b),
+		.fdd_in(fdd_in),
+		.fdd_out(fdd_out),
 		.clk(clk),
 		.clk_en(clk_en),
 		.reset(reset),

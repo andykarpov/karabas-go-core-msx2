@@ -6,6 +6,7 @@ run
 -ofmt NGC
 -p xc6slx25-2-ftg256
 -top msx2
+-generics {FDD_PHYS=1}
 -opt_mode Speed
 -opt_level 2
 -power NO
