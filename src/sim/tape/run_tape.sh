@@ -14,7 +14,7 @@ python3 sim/fdd/mkfdd.py $B/fdd > /dev/null
 mkdir -p $B/out
 pids=()
 while read -r name cas frames crc; do
-	SIM_NO_DISKROM=1 SIM_FILE_GAP=10 $B/sys/sim_sys --rom $S/roms/cbios_main_msx1_eu.rom:0 --rom $S/roms/cbios_logo_msx1.rom:0x8000 \
+	SIM_NO_DISKROM=1 SIM_FILE_GAP=10 $B/sys/sim_sys --cbios $S/roms --fast-logo \
 		--cart-b $B/tape/tapetest.rom --cas $B/tape/$cas --disk $B/fdd/test720.dsk --fdd-latency 2 \
 		--frames "$frames" --hash --ppm $B/out/tape_$name.ppm > $B/out/tape_$name.log 2>&1 &
 	pids+=($!)
@@ -22,7 +22,7 @@ done < <(grep -v '^#' $S/sim/tape/tape.txt)
 for p in "${pids[@]}"; do wait "$p"; done
 err=0
 while read -r name cas frames crc; do
-	got=$(sed -n "s/^frame $frames crc //p" $B/out/tape_$name.log)
+	got=$(sed -n "s/^frame $frames crc \([0-9a-f]*\).*/\1/p" $B/out/tape_$name.log)
 	sram=$(sed -n 's/^cas: .* \([0-9]*\) wrong in the SRAM/\1/p' $B/out/tape_$name.log)
 	if [ "$got" = "$crc" ] && [ "$sram" = "0" ]; then echo "$name: ok"
 	else echo "$name: FAIL (crc $got, expected $crc; SRAM: ${sram:-?} wrong bytes)"; err=$((err + 1)); fi

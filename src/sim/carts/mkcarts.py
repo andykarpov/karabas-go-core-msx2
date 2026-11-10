@@ -15,7 +15,7 @@ that segment 32 is segment 0; it prints the number of good segments in hex:
 With the RAM of 64 KB (sim_sys --ram64) the ports do nothing and it must fail.
 
 fmtest.rom (16 KB, no mapper, for cartridge A) tests the OPLL: it looks for "APRLOPLL" at 4018 of
-slot 2 with RDSLT (the MSX-MUSIC signature the core shows there without cartridge B), prints
+slot 3-1 with RDSLT (the MSX-MUSIC ROM of C-BIOS in the layout of msx2_slots), prints
 "FM OK" or "FM NONE", then keys on a note (violin) on the OPLL at the ports 7C-7D: the audio
 output is loud with the OPLL (sim_sys --audio-min) and quiet without it (--no-opll, --audio-max).
 
@@ -255,7 +255,7 @@ start:
 	ld	b, 8
 find:	push	bc
 	push	de
-	ld	a, 2		; slot 2, not expanded
+	ld	a, 0x87		; slot 3-1 (expanded)
 	call	RDSLT
 	pop	de
 	pop	bc

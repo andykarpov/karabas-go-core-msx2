@@ -1,0 +1,10 @@
+# The VDP tests of run_vdp.sh: name (sim/build/vdp/<name>.rom, mkvdp.py), frames, the CRC-32 of the
+# last frame (sim_sys --hash), more sim_sys arguments. Each CRC was taken after the frame was looked at:
+# g4 / g6 / g7 / yjk: the fill, eight bands, two lines corner to corner, the XOR box in the middle
+# (g6 512 dots wide: its commands end later, 80 frames; yjk the colours of YJK); text80: six lines of
+# 80 columns of text. Not checked against a real VDP: g7 shows colour 0 black, not the border (TP = 0).
+g4      80 00a3095a
+g6      80 1784d0bb
+g7      80 166b8a1a
+yjk     80 5ee1d720
+text80  45 36b338bc

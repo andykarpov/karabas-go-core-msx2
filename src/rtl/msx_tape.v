@@ -5,7 +5,7 @@
  msx_tape.v
 
  The cassette of the MSX: a .cas file of the FL item "Tape" (file slot 3) in the SRAM from BASE (up
- to 256 KB, the rest of a bigger file is dropped), played by tape (the CAS player of MiSTer MSX1,
+ to 2^AW bytes, 128 KB in the MSX2 core; the rest of a bigger file is dropped), played by tape (the CAS player of MiSTer MSX1,
  rtl/msx/tape.v) while the motor of the PPI is on.
  - The load does not reset the machine (as MiSTer: a CAS is loaded at the prompt of BASIC). Its bytes
    go to the SRAM through the aux port of msx_sram, which the disk image cache shares (one request
@@ -19,6 +19,7 @@
 
 module msx_tape #(
 	parameter [21:0] BASE = 22'h3C0000,
+	parameter AW = 17,              // the size of the tape in the SRAM: 2^AW bytes (at most 18)
 	parameter TAPE_SILENT = 1000,   // of tape: shorter in the simulation
 	parameter TAPE_SYNC = 1454
 ) (
@@ -47,9 +48,9 @@ module msx_tape #(
 
 // ---------------- the load
 
-reg [18:0] len = 19'd0;   // the bytes of the file in the SRAM (256 KB at most)
+reg [18:0] len = 19'd0;   // the bytes of the file in the SRAM (2^AW at most)
 reg load_d = 1'b0;
-wire load_byte = load && file_wr && file_addr[31:18] == 14'd0;
+wire load_byte = load && file_wr && file_addr[31:AW] == 0;
 always @(posedge clk) begin
 	load_d <= load;
 	if (load && !load_d)
@@ -90,7 +91,7 @@ tape #(.SILENT(TAPE_SILENT), .SYNC(TAPE_SYNC)) cass (
 	.cas_out(cas_out)
 );
 
-wire past_end = ram_a[26:18] != 9'd0 || { 1'b0, ram_a[17:0] } >= len;
+wire past_end = ram_a[26:AW] != 0 || { 1'b0, ram_a[17:0] } >= len;
 
 // ---------------- aux port: the writes of the load first, then the reads of the player
 

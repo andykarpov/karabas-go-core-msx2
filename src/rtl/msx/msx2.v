@@ -37,8 +37,7 @@ module msx2
 	input   [7:0] ioctl_dout,
 	input         ioctl_isROMA,
 	input         ioctl_isROMB,
-	input         ioctl_isBIOS,
-	input         ioctl_isFWBIOS,
+	input         ioctl_isBIOS,  // karabas: the system ROM image of 512 KB (OCM-BIOS.DAT) to 000000
 	output        ioctl_wait,
 	input   [1:0] rom_enabled,
 	output        cas_motor,
@@ -48,13 +47,13 @@ module msx2
 	input   [3:0] slot_B,
 	input         fdd_rom_en,   // karabas: the disk ROM of the VY-0010 on (0 for C-BIOS)
 	output  [2:0] mapper_info,
-	// karabas: the BIOS, the firmware ROM, the RAM of slot 3 and the cartridges are in the SRAM
-	// of the board (msx_sram), not in the block RAM and SDRAM of MiSTer; see the map at slots
+	// karabas: the system ROMs, the RAM of slot 3 and the cartridges are in the SRAM of the board
+	// (msx_sram), not in the block RAM and SDRAM of MiSTer; see the map at the end
 	output [21:0] mem_addr,
 	output        mem_we,
 	output  [7:0] mem_din,
 	input   [7:0] mem_dout,
-	input         fw_rom_en,
+	input         logo_en,       // karabas: C-BIOS (its slot layout, the logo ROM in slot 0 page 2), see msx2_slots
 	input         ram_mapper_en, // karabas: the RAM of slot 3 is 512 KB with a memory mapper (ram_mapper.v)
 	input         opll_en,       // karabas: the OPLL (MSX-MUSIC, jt2413) at the ports 7C-7D
 	// karabas: slot 1 is the SD interface of MSX1FPGA for Nextor (nextor_sd.v) instead of cartridge A
@@ -101,7 +100,9 @@ wire [7:0] d_from_8255;
 wire [7:0] ppi_out_a, ppi_out_c;
 wire CS1_n, CS01_n, CS12_n, CS2_n;
 wire [3:0] SLTSL_n;
-wire [3:0] slots_sltsl_n = { SLTSL_n[3:2], SLTSL_n[1] | nextor_en, SLTSL_n[0] }; // karabas: slot 1 off for Nextor
+// karabas: slot 1 off for Nextor; slot 3 of slots.v is the RAM of 3-0 only (msx2_slots)
+wire ram_sel;
+wire [3:0] slots_sltsl_n = { ~ram_sel, SLTSL_n[2], SLTSL_n[1] | nextor_en, SLTSL_n[0] };
 // karabas: the memory of the slots goes to the SRAM (see the map below)
 wire [24:0] sdram_addr;
 wire        sdram_rd;
@@ -197,11 +198,51 @@ ls74 u1_2
 //  -----------------------------------------------------------------------------
 //  -- ROM
 //  -----------------------------------------------------------------------------
-// karabas: the BIOS (32 KB) and the firmware ROM (16 KB) are in the SRAM, see mem_addr below
-// fw_rom_en: the ROM of slot 0 page 2 is there (the logo ROM of C-BIOS, or the last 16 KB of a
-// BIOS file of 48 KB); without it the page reads FF, as a BIOS of 32 KB has it
-wire [7:0] rom_q = mem_dout;
-wire [7:0] fw_rom_q = fw_rom_en ? mem_dout : 8'hFF;
+// karabas: the ROMs of the expanded slots 0 and 3 (MSX2, the layout of OCM) are in the SRAM,
+// msx2_slots finds them; the expansion registers at FFFF are there too
+wire        exp_rd, rom_sel, erm_sel;
+wire  [7:0] exp_q;
+wire [21:0] rom_addr;
+msx2_slots msx2_slots
+(
+	.clk(clk),
+	.reset(reset),
+	.addr(a),
+	.din(d_from_cpu),
+	.wr_n(wr_n),
+	.ppi_a(ppi_out_a),
+	.sltsl_n(SLTSL_n),
+	.cbios(logo_en),
+	.music_en(opll_en),
+	.exp_rd(exp_rd),
+	.exp_q(exp_q),
+	.rom_sel(rom_sel),
+	.rom_addr(rom_addr),
+	.ram_sel(ram_sel),
+	.erm_sel(erm_sel)
+);
+
+//  -----------------------------------------------------------------------------
+//  -- karabas: the RTC (RP5C01) at the ports B4 (register) and B5 (data), rtc.v of OCM-PLD
+//  -----------------------------------------------------------------------------
+// its request is a pulse of one clock at the start of the I/O cycle, as for the VDP
+wire       rtc_cs = ~iorq_n & m1_n & (a[7:1] == 7'b1011010) & (~rd_n | ~wr_n);
+reg        rtc_cs_d = 1'b0;
+always @(posedge clk) rtc_cs_d <= rtc_cs;
+wire       rtc_sel = ~iorq_n & m1_n & (a[7:1] == 7'b1011010);
+wire [7:0] d_from_rtc;
+rtc rtc
+(
+	.clk21m(clk),
+	.reset(reset),
+	.clkena(clk_en_3m58_p),
+	.req(rtc_cs & ~rtc_cs_d),
+	.ack(),
+	.wrt(~wr_n),
+	.adr(a),
+	.dbi(d_from_rtc),
+	.dbo(d_from_cpu)
+);
 
 //  -----------------------------------------------------------------------------
 //  -- karabas: the ESE-VDP (V9938 / V9958 of OCM-PLD) at the ports 98-9B, on clk21
@@ -402,42 +443,28 @@ jt2413 opll
 	.sample()
 );
 
-// the internal MSX-MUSIC is found by its ROM: "APRLOPLL" at 4018 of a slot. With the OPLL on and no
-// cartridge B, page 1 of slot 2 has the header of the MSX-MUSIC ROM of C-BIOS (cbios_music.rom:
-// "AB", no init, the name); zeros elsewhere
-wire       opll_rom = opll_en & ~rom_enabled[1] & ~SLTSL_n[2] & a[15:14] == 2'b01;
-reg  [7:0] opll_rom_q;
-always @* begin
-	case (a[13:0])
-		14'h0000: opll_rom_q = "A";
-		14'h0001: opll_rom_q = "B";
-		14'h0018: opll_rom_q = "A";
-		14'h0019: opll_rom_q = "P";
-		14'h001A: opll_rom_q = "R";
-		14'h001B: opll_rom_q = "L";
-		14'h001C: opll_rom_q = "O";
-		14'h001D: opll_rom_q = "P";
-		14'h001E: opll_rom_q = "L";
-		14'h001F: opll_rom_q = "L";
-		default:  opll_rom_q = 8'h00;
-	endcase
-end
+// karabas: the MSX-MUSIC ROM is in slot 0-2 now (msx2_slots), the fake header of the MSX1 core
+// (APRLOPLL in slot 2) is gone
 
 //  -----------------------------------------------------------------------------
 //  -- CPU data multiplex
-//  ----------------------------------------------------------------------------- 
-assign d_to_cpu = ~(CS01_n | SLTSL_n[0]) ? rom_q :
-                  ~(CS2_n  | SLTSL_n[0]) ? fw_rom_q :
-						nextor_sel             ? nextor_q : // karabas
-						~(SLTSL_n[1])          ? d_from_slots:
-						opll_rom               ? opll_rom_q : // karabas
-						~(SLTSL_n[2])          ? d_from_slots:
-						~(SLTSL_n[3])          ? d_from_slots:                 
-						(vdp_sel & ~rd_n)      ? d_from_vdp : // karabas: the ports 98-9B of the ESE-VDP
-						~(psg_n | rd_n)        ? d_from_psg :
-						~(ppi_n | rd_n)        ? d_from_8255 : 
-						~(ram_mapper_n | rd_n) ? d_from_ram_mapper : // karabas
-						                         8'hFF;
+//  -----------------------------------------------------------------------------
+// karabas: the expansion registers, the ROMs of slots 0 and 3 (msx2_slots), slot 0 and 3 read FF
+// where nothing is; the RAM of 3-0 through slots.v (its slot 3)
+assign d_to_cpu = exp_rd                 ? exp_q :
+                  rom_sel                ? mem_dout :
+                  ~(SLTSL_n[0])          ? 8'hFF :
+                  nextor_sel             ? nextor_q : // karabas
+                  ~(SLTSL_n[1])          ? d_from_slots:
+                  ~(SLTSL_n[2])          ? d_from_slots:
+                  ram_sel                ? d_from_slots:
+                  ~(SLTSL_n[3])          ? 8'hFF :
+                  (vdp_sel & ~rd_n)      ? d_from_vdp : // karabas: the ports 98-9B of the ESE-VDP
+                  ~(psg_n | rd_n)        ? d_from_psg :
+                  ~(ppi_n | rd_n)        ? d_from_8255 :
+                  ~(ram_mapper_n | rd_n) ? d_from_ram_mapper : // karabas
+                  (rtc_sel & ~rd_n)      ? d_from_rtc : // karabas
+                                           8'hFF;
 
 //  -----------------------------------------------------------------------------
 //  -- Keyboard decoder
@@ -559,30 +586,31 @@ slots slots
 //  -----------------------------------------------------------------------------
 //  -- karabas: the SRAM map (byte addresses)
 //  -----------------------------------------------------------------------------
-// 000000 BIOS 32 KB (slot 0, 0000-7FFF)      080000 RAM 512 KB of slot 3 (ram_mapper, segment n at
-// 008000 firmware ROM 16 KB (slot 0, 8000-BFFF)   080000 + n * 16 KB; without the mapper 64 KB, segments 0-3)
-// 020000 the Nextor ROM 128 KB (nextor_sd: bank n at 020000 + n * 16 KB, RAM in 7000-7AFF of bank 7)
+// 000000-07FFFF the system ROMs, laid out as OCM-BIOS.DAT (msx2_slots): 000000 the ESE-RAM of OCM
+//               (128 KB; here the Nextor ROM of nextor_sd: bank n at 000000 + n * 16 KB, RAM in
+//               7000-7AFF of bank 7), 020000 main, 028000 XBASIC, 02C000 MSX-MUSIC, 030000 sub +
+//               kanji BASIC, 03C000 free / the logo of C-BIOS, 040000 the kanji font (256 KB)
+// 080000 RAM 512 KB of slot 3-0 (ram_mapper, segment n at 080000 + n * 16 KB; without the mapper
+//        64 KB, segments 0-3)
 // 100000 cartridge B, 200000 cartridge A, 1 MB each
-// 300000 the disk image (msx_fdd_cache, 768 KB)   3C0000 free (the tape, Ф3)
+// 300000 the disk image (msx_fdd_cache, 768 KB), 3C0000 the VRAM 128 KB (msx_sram, the VDP port),
+// 3E0000 the tape (msx_tape, 128 KB)
 // The cartridges are at the addresses of the MiSTer SDRAM, bit 22 = slot A; a ROM file over 1 MB
 // is cut (the rest is not written). The SRAM is read all the time (msx_sram); a write is a level
 // here, msx_sram writes once at its rising edge.
 wire [21:0] cart_addr = {sdram_addr[22] ? 2'b10 : 2'b01, sdram_addr[19:0]};
 wire        ioctl_cart = ioctl_isROMA | ioctl_isROMB;
-// a BIOS file of up to 48 KB: 32 KB of BIOS and 16 KB of the ROM of slot 0 page 2, which follows
-// it in the SRAM
-wire        ioctl_mem = (ioctl_isBIOS & ioctl_addr < 25'hC000) | ioctl_isFWBIOS | (ioctl_cart & ioctl_addr[24:20] == 5'd0) |
+// the BIOS file: the image of 512 KB (OCM-BIOS.DAT), from 000000
+wire        ioctl_mem = (ioctl_isBIOS & ioctl_addr[24:19] == 6'd0) | (ioctl_cart & ioctl_addr[24:20] == 5'd0) |
                         (ioctl_isNEXTOR & ioctl_addr[24:17] == 8'd0);
 
-assign mem_addr = ioctl_isBIOS            ? {6'h00, ioctl_addr[15:0]} :
-                  ioctl_isFWBIOS          ? {8'h02, ioctl_addr[13:0]} :
-                  ioctl_isNEXTOR          ? {5'b00001, ioctl_addr[16:0]} :
+assign mem_addr = ioctl_isBIOS            ? {3'b000, ioctl_addr[18:0]} :
+                  ioctl_isNEXTOR          ? {5'b00000, ioctl_addr[16:0]} :
                   ioctl_isROMA            ? {2'b10, ioctl_addr[19:0]} :
                   ioctl_isROMB            ? {2'b01, ioctl_addr[19:0]} :
-                  ~(CS01_n | SLTSL_n[0])  ? {7'h00, a[14:0]} :
-                  ~(CS2_n  | SLTSL_n[0])  ? {8'h02, a[13:0]} :
-                  ~SLTSL_n[3]             ? {3'b001, ram_segment, a[13:0]} :
-                  nextor_mem              ? {5'b00001, nextor_bank, a[13:0]} :
+                  rom_sel                 ? rom_addr :
+                  ram_sel                 ? {3'b001, ram_segment, a[13:0]} :
+                  nextor_mem              ? {5'b00000, nextor_bank, a[13:0]} :
                                             cart_addr;
 assign mem_we  = ioctl_download ? ioctl_wr & ioctl_mem : ram_we | nextor_we;
 assign mem_din = ioctl_download ? ioctl_dout : d_from_cpu;

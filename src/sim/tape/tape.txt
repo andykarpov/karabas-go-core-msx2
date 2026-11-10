@@ -1,5 +1,5 @@
 # The cassette tests of run_tape.sh: name, CAS file (sim/build/tape, mktape.py), frames, the CRC-32 of the
 # last frame. ok: "TAPE 12 OK"; bad: one byte of block 2 changed, "TAPE 1x FAIL ..." (a decoder that
 # reads nothing would hang at "TAPE " in both).
-ok   test.cas 220 d1157302
-bad  bad.cas  220 18320628
+ok   test.cas 95 c114682d
+bad  bad.cas  95 7dc08b7d

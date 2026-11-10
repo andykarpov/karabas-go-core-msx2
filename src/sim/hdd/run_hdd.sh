@@ -14,7 +14,7 @@ python3 sim/hdd/mkhdd.py $B/hdd > /dev/null
 mkdir -p $B/out
 pids=()
 while read -r name lat drop frames crc; do
-	SIM_FDD=1 $B/sys/sim_sys --rom $S/roms/cbios_main_msx1_eu.rom:0 --rom $S/roms/cbios_logo_msx1.rom:0x8000 \
+	SIM_FDD=1 $B/sys/sim_sys --cbios $S/roms --fast-logo \
 		--cart-b $B/hdd/sdtest.rom --nextor --no-slot1-rom --hdd $B/hdd/test.img --save-hdd $B/out/hdd_$name.img \
 		--fdd-latency "$lat" --fdd-drop "$drop" --frames "$frames" --hash --ppm $B/out/hdd_$name.ppm > $B/out/hdd_$name.log 2>&1 &
 	pids+=($!)
@@ -22,7 +22,7 @@ done < <(grep -v '^#' $S/sim/hdd/hdd.txt)
 for p in "${pids[@]}"; do wait "$p"; done
 err=0
 while read -r name lat drop frames crc; do
-	got=$(sed -n "s/^frame $frames crc //p" $B/out/hdd_$name.log)
+	got=$(sed -n "s/^frame $frames crc \([0-9a-f]*\).*/\1/p" $B/out/hdd_$name.log)
 	img=$(python3 - "$B/hdd/test.img" "$B/out/hdd_$name.img" <<'PY'
 import sys
 a = open(sys.argv[1], 'rb').read()

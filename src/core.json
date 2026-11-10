@@ -7,8 +7,10 @@
     "order": 19,
     "eeprom_bank": 255,
     "roms": [
-    {"filename": "roms/cbios_main_msx1_eu.rom", "address": 0},
-    {"filename": "roms/cbios_logo_msx1.rom", "address": 32768}
+    {"filename": "roms/cbios_main_msx2+_eu.rom", "address": 131072},
+    {"filename": "roms/cbios_sub.rom", "address": 196608},
+    {"filename": "roms/cbios_music.rom", "address": 180224},
+    {"filename": "roms/cbios_logo_msx2+.rom", "address": 245760}
     ],
     "boards": {
         "go": {"bitstream": "karabas_go.bin"},

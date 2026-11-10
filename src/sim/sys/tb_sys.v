@@ -1,11 +1,12 @@
 `timescale 1ns / 1ps
 `default_nettype wire
 
-// msx_system and msx_video with a model of the SRAM (two lanes of 2M x 8, /OE low, written at the
-// middle of /WE), driven by sim_sys.cpp: the loaders of the mcu, the switches, the keyboard.
+// msx_system with a model of the SRAM (two lanes of 2M x 8, /OE low, written at the middle of /WE),
+// driven by sim_sys.cpp: the loaders of the mcu, the switches, the keyboard. The picture is the
+// 15 kHz output of the VDP (on clk21), sim_sys takes a pixel at each clk21 with dhclk.
 module tb_sys (
 	input wire clk,
-	input wire clk_vga,
+	input wire clk21,
 	input wire reset,
 	input wire rom_active,
 	input wire [31:0] rom_addr,
@@ -20,6 +21,8 @@ module tb_sys (
 	input wire [3:0] mapper_a,
 	input wire [3:0] mapper_b,
 	input wire pal,
+	input wire pal_auto,
+	input wire v9958,
 	input wire [7:0] kb_scancode,
 	input wire kb_scancode_upd,
 	input wire [12:0] joy_l,
@@ -51,10 +54,18 @@ module tb_sys (
 	output wire hs,
 	output wire vs,
 	output wire de,
+	output wire dhclk,
+	output wire interlace,
 	output wire [15:0] audio,
 	// the CPU bus for a trace
 	output wire [15:0] cpu_a,
 	output wire cpu_m1_n,
+	output wire [7:0] cpu_di,
+	output wire cpu_rd_n,
+	output wire cpu_wr_n,
+	output wire cpu_iorq_n,
+	output wire [7:0] cpu_do,
+	output wire [7:0] dbg_ppi_a,
 	output wire [3:0] dbg_border,
 	output wire [7:0] dbg_y,
 	output wire [10:0] dbg_ps2_key,
@@ -65,38 +76,43 @@ module tb_sys (
 wire [20:0] MA;
 wire [15:0] MD;
 wire [1:0] MWR_N;
-wire [3:0] vdp_col;
-wire vdp_ce_pix, vdp_hor_active, vdp_vert_active;
+wire [7:0] vdp_r, vdp_g, vdp_b;
+wire vdp_hs_n, vdp_vs_n, vdp_blank;
 
 msx_system #(.TAPE_SILENT(100), .TAPE_SYNC(32)) sys (
-	.clk(clk), .reset(reset),
+	.clk(clk), .clk21(clk21), .reset(reset),
 	.rom_active(rom_active), .rom_addr(rom_addr), .rom_data(rom_data), .rom_wr(rom_wr),
 	.file_reset(file_reset), .file_active(file_active), .file_slot(file_slot), .file_addr(file_addr), .file_data(file_data),
 	.file_wr(file_wr),
-	.mapper_a(mapper_a), .mapper_b(mapper_b), .pal(pal), .joy_swap(1'b0), .tape_rewind(tape_rewind), .tape_line(1'b0), .tape_in(1'b0), .tape_out(), .eject(1'b0), .fdd(fdd), .fdd_rom_en(fdd_rom_en), .ram_mapper(ram_mapper), .opll(opll), .nextor(nextor),
+	.mapper_a(mapper_a), .mapper_b(mapper_b), .pal(pal), .pal_auto(pal_auto), .v9958(v9958), .joy_swap(1'b0), .tape_rewind(tape_rewind), .tape_line(1'b0), .tape_in(1'b0), .tape_out(), .eject(1'b0), .fdd(fdd), .fdd_rom_en(fdd_rom_en), .ram_mapper(ram_mapper), .opll(opll), .nextor(nextor),
 	.img_mounted(img_mounted), .img_size(img_size), .img_data_wr(img_data_wr), .img_data_addr(img_data_addr),
 	.img_data(img_data), .img_result_wr(img_result_wr), .img_result(img_result), .img_sum(img_sum),
 	.img_q_wr(img_q_wr), .img_q_di(img_q_di), .img_q_ack(img_q_ack), .fdd_active(fdd_active), .fdd_filling(fdd_filling), .fdd_filled(fdd_filled),
 	.kb_scancode(kb_scancode), .kb_scancode_upd(kb_scancode_upd), .joy_l(joy_l), .joy_r(13'd0),
-	.vdp_col(vdp_col), .vdp_ce_pix(vdp_ce_pix), .vdp_hor_active(vdp_hor_active),
-	.vdp_vert_active(vdp_vert_active),
+	.vdp_r(vdp_r), .vdp_g(vdp_g), .vdp_b(vdp_b), .vdp_hs_n(vdp_hs_n), .vdp_vs_n(vdp_vs_n),
+	.vdp_dhclk(dhclk), .vdp_dlclk(), .vdp_blank(vdp_blank), .vdp_interlace(interlace),
 	.audio(audio),
 	.MA(MA), .MD(MD), .MWR_N(MWR_N)
 );
 
-msx_video video (
-	.clk(clk), .ce_pix(vdp_ce_pix), .hor_active(vdp_hor_active), .vert_active(vdp_vert_active),
-	.col(vdp_col),
-	.clk_vga(clk_vga), .rgb(rgb), .hs(hs), .vs(vs), .de(de)
-);
+assign rgb = { vdp_r, vdp_g, vdp_b };
+assign hs = ~vdp_hs_n;
+assign vs = ~vdp_vs_n;
+assign de = ~vdp_blank;
 
-assign cpu_a = sys.msx1.a;
-assign cpu_m1_n = sys.msx1.m1_n;
-assign dbg_border = video.border;
-assign dbg_y = video.y;
+assign cpu_a = sys.msx2.a;
+assign cpu_m1_n = sys.msx2.m1_n;
+assign cpu_di = sys.msx2.d_to_cpu;
+assign cpu_rd_n = sys.msx2.rd_n;
+assign cpu_wr_n = sys.msx2.wr_n;
+assign cpu_iorq_n = sys.msx2.iorq_n;
+assign cpu_do = sys.msx2.d_from_cpu;
+assign dbg_ppi_a = sys.msx2.ppi_out_a;
+assign dbg_border = 4'd0;
+assign dbg_y = 8'd0;
 assign dbg_ps2_key = sys.ps2_key;
-assign dbg_kb = sys.msx1.d_from_kb;
-assign dbg_kb_row = sys.msx1.ppi_out_c[3:0];
+assign dbg_kb = sys.msx2.d_from_kb;
+assign dbg_kb_row = sys.msx2.ppi_out_c[3:0];
 
 // the SRAM
 reg [7:0] lo [0:(1<<21)-1];
