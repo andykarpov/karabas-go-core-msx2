@@ -40,7 +40,10 @@ module msx_system #(
 	parameter FDD_PHYS = 0,         // the physical floppy drives (Karabas Go)
 	parameter TAPE_SILENT = 1000,   // the CAS player (msx_tape): shorter in the simulation
 	parameter TAPE_SYNC = 1454,
-	parameter [25:0] RTC_TIME_DELAY = 26'd32000000   // msx2_rtc: the time ~0.75 s after the start
+	parameter [25:0] RTC_TIME_DELAY = 26'd32000000,  // msx2_rtc: the time ~0.75 s after the start
+	// the MCU link: 1 = v1 (kg_mcu: the img_* stream, img_sdc in here), 2 = v2 (kg_mcu2: its mounter has
+	// the sector interface of img_sdc, the sdc_* ports below; img_* unused)
+	parameter LINK = 1
 ) (
 	input wire clk,
 	input wire clk21,          // the VDP: clk / 2, rising edges with those of clk
@@ -102,6 +105,20 @@ module msx_system #(
 	input wire img_phys_wr,    // IMG_PHYS of kg_mcu: { slot, drive } (drive 1 DS0, 2 DS1), one clock
 	input wire [15:0] img_phys,
 	input wire [7:0] img_wp,   // IMG_WP of kg_mcu: the image of slot n is write protected
+	// LINK 2: the sector interface of the mounter of kg_mcu2 (img_sdc names)
+	input wire [7:0] sdc_img_mounted_i,
+	input wire [63:0] sdc_img_size_i,
+	output wire [7:0] sdc_rd_o,
+	output wire [7:0] sdc_wr_o,
+	output wire [31:0] sdc_sector_o,
+	input wire sdc_busy_i,
+	input wire sdc_done_i,
+	input wire sdc_error_i,
+	input wire [2:0] sdc_slot_i,
+	input wire sdc_byte_in_strobe_i,
+	input wire [8:0] sdc_byte_addr_i,
+	input wire [7:0] sdc_byte_in_data_i,
+	output wire [7:0] sdc_byte_out_data_o,
 	input wire [3:0] fdd_in,   // the floppy connector (FDD_PHYS), high = active: { rdata, wprt, tr00, index }
 	output wire [7:0] fdd_out, // { wdata, wgate, side1, step, dir, motor, ds1, ds0 }
 	output wire fdd_active,    // a sector is being transferred (a LED)
@@ -275,9 +292,9 @@ wire [7:0] sdc_byte_in_data, fdd_byte_out_data, hd_byte_out_data;
 // frames of a slot (an image, an eject) end it; CMD_IMG_PHYS comes after them.
 reg [1:0] phys_a = 2'd0, phys_b = 2'd0;
 always @(posedge clk) begin
-	if (img_mounted[0])
+	if (LINK == 2 ? sdc_img_mounted_i[0] : img_mounted[0])
 		phys_a <= 2'd0;
-	if (img_mounted[7])
+	if (LINK == 2 ? sdc_img_mounted_i[7] : img_mounted[7])
 		phys_b <= 2'd0;
 	if (img_phys_wr && img_phys[15:8] == 8'd0)
 		phys_a <= img_phys[1:0];
@@ -416,6 +433,10 @@ wire [7:0] aux_dout;
 wire [31:0] sdc_sector = (fdd_sdc_rd || fdd_sdc_wr) ? fdd_sector : hd_sector;
 wire [7:0] sdc_byte_out_data = sdc_slot == 3'd6 ? hd_byte_out_data : fdd_byte_out_data;
 
+wire [7:0] sdc_rd_v = { 1'b0, hd_sdc_rd, 5'd0, fdd_sdc_rd };
+wire [7:0] sdc_wr_v = { 1'b0, hd_sdc_wr, 5'd0, fdd_sdc_wr };
+
+generate if (LINK == 1) begin : link1
 // no reset: a reset of the machine during a request leaves img_sdc to finish it (msx_fdd_cache
 // waits for its end); a request that gets no answer ends after the timeout
 img_sdc #(
@@ -437,8 +458,8 @@ img_sdc #(
 	.img_q_ack(img_q_ack),
 	.sdc_img_mounted(sdc_img_mounted),
 	.sdc_img_size(sdc_img_size),
-	.sdc_rd({ 1'b0, hd_sdc_rd, 5'd0, fdd_sdc_rd }),
-	.sdc_wr({ 1'b0, hd_sdc_wr, 5'd0, fdd_sdc_wr }),
+	.sdc_rd(sdc_rd_v),
+	.sdc_wr(sdc_wr_v),
 	.sdc_sector(sdc_sector),
 	.sdc_busy(sdc_busy),
 	.sdc_done(sdc_done),
@@ -450,6 +471,28 @@ img_sdc #(
 	.sdc_byte_out_data(sdc_byte_out_data),
 	.active(fdd_active)
 );
+	assign sdc_rd_o = 8'd0;
+	assign sdc_wr_o = 8'd0;
+	assign sdc_sector_o = 32'd0;
+	assign sdc_byte_out_data_o = 8'd0;
+end else begin : link2
+	assign sdc_img_mounted = sdc_img_mounted_i;
+	assign sdc_img_size = sdc_img_size_i;
+	assign sdc_busy = sdc_busy_i;
+	assign sdc_done = sdc_done_i;
+	assign sdc_error = sdc_error_i;
+	assign sdc_slot = sdc_slot_i;
+	assign sdc_byte_in_strobe = sdc_byte_in_strobe_i;
+	assign sdc_byte_addr = sdc_byte_addr_i;
+	assign sdc_byte_in_data = sdc_byte_in_data_i;
+	assign sdc_rd_o = sdc_rd_v;
+	assign sdc_wr_o = sdc_wr_v;
+	assign sdc_sector_o = sdc_sector;
+	assign sdc_byte_out_data_o = sdc_byte_out_data;
+	assign img_q_wr = 1'b0;
+	assign img_q_di = 24'd0;
+	assign fdd_active = sdc_busy_i;
+end endgenerate
 
 msx_fdd_cache #(.BASE(22'h300000), .MAXSEC(1536)) fdd_cache (
 	.clk(clk),

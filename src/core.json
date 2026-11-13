@@ -15,9 +15,9 @@
     {"filename": "roms/cbios_logo_msx2+.rom", "address": 245760}
     ],
     "boards": {
-        "go": {"bitstream": "karabas_go.bin"},
-        "mini": {"bitstream": "karabas_mini.bin"},
-        "minig": {"bitstream": "karabas_minig.bin"}
+        "go": {"link": 2, "build": "26111333", "bitstream": "karabas_go.bin"},
+        "mini": {"link": 2, "build": "26111333", "bitstream": "karabas_mini.bin"},
+        "minig": {"link": 2, "build": "26111314", "bitstream": "karabas_minig.bin"}
     },
     "osd": [
     {"type": "FL", "name": "Cart A", "slot": 4, "extensions": ".rom,.mx1,.mx2,.bin", "dir": "/msx2", "hotkey": "Menu+F1", "show_if": {"item": "Slot 1", "value": "Cartridge A"}},
