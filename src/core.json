@@ -15,8 +15,8 @@
     {"filename": "roms/cbios_logo_msx2+.rom", "address": 245760}
     ],
     "boards": {
-        "go": {"bitstream": "karabas_go.bin"},
-        "mini": {"bitstream": "karabas_mini.bin"},
+        "go": {"link": 2, "build": "26111333", "bitstream": "karabas_go.bin"},
+        "mini": {"link": 2, "build": "26111333", "bitstream": "karabas_mini.bin"},
         "minig": {"link": 2, "build": "26111314", "bitstream": "karabas_minig.bin"}
     },
     "osd": [
